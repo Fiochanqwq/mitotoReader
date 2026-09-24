@@ -58,6 +58,7 @@ try {
   const reopened = await saved();
   assert.equal(reopened.bookmarks[0].key, before.bookmarks[0].key);
   assert.ok(reopened.progress > 0, "long book must not reopen at the beginning");
+  await page.locator("#tools-toggle").click();
   await page.locator("#bookmarks-toggle").click();
   await page.locator("#bookmarks button").first().click();
   await page.waitForTimeout(700);

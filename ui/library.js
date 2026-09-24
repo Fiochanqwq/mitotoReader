@@ -8,7 +8,10 @@ export function libraryView(host, open, message) {
     const sort = $("library-sort").value;
     const list = entries.filter(
       (x) =>
-        (!filter || x.kind === filter || (filter === "image" && /png|jpe?g/.test(x.kind))) &&
+        (!filter || x.kind === filter ||
+          (filter === "image" && /png|jpe?g/.test(x.kind)) ||
+          (filter === "office" && /^(docx|pptx|xlsx|odt|odp|ods)$/.test(x.kind)) ||
+          (filter === "text" && /^(txt|md|html|htm|csv|tsv|rtf)$/.test(x.kind))) &&
         `${x.title || ""} ${x.name} ${x.author || ""}`.toLocaleLowerCase().includes(query),
     );
     list.sort(

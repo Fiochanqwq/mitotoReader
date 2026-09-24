@@ -1,9 +1,12 @@
-const { app, BrowserWindow, dialog, ipcMain, protocol, session, clipboard } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, clipboard, safeStorage } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { extensions, migrate, inspect, upsert, publicEntry, cacheKey } = require("./library.cjs");
 const { assetHandler } = require("./assets.cjs");
 const { prepareRuntime } = require("./runtime.cjs");
+const { providers, validateProvider, verifyProvider, translateText } = require("./providers.cjs");
+const { secretStore } = require("./secrets.cjs");
+const { engineManager } = require("./engines.cjs");
 
 const origin = "mitoto://app";
 const testMode = process.env.MITOTO_TEST_MODE === "1";
@@ -69,6 +72,13 @@ async function cacheFile(id, key) {
   await fs.mkdir(dir, { recursive: true });
   return path.join(dir, cacheKey(id + ":" + key) + ".txt");
 }
+async function translationFile(id, provider, target) {
+  if (!state.library.some((entry) => entry.id === id) || !Object.hasOwn(providers, provider) || typeof target !== "string" || target.length > 40)
+    throw new Error("翻译缓存参数无效。");
+  const dir = path.join(app.getPath("userData"), "translations");
+  await fs.mkdir(dir, { recursive: true });
+  return path.join(dir, cacheKey(`${id}:${provider}:${target}`) + ".json");
+}
 
 async function openDocument(file) {
   const info = await inspect(
@@ -122,6 +132,8 @@ app
       const saved = JSON.parse(await fs.readFile(path.join(app.getPath("userData"), "reader.json"), "utf8"));
       state = migrate(saved);
     } catch {}
+    const secrets = secretStore(safeStorage, app.getPath("userData"));
+    const engines = engineManager(app.getPath("userData"));
 
     const root = path.resolve(__dirname, "../build");
     protocol.handle("mitoto", assetHandler(root));
@@ -176,6 +188,73 @@ app
     session.defaultSession.on("will-download", (event) => event.preventDefault());
 
     handle("state", () => snapshot());
+    handle("provider-list", async () => {
+      const configured = new Set(await secrets.status());
+      return Object.entries(providers).map(([id, preset]) => ({
+        id, name: preset.name, model: state.providers[id]?.model || preset.model,
+        region: state.providers[id]?.region || "cn", configured: configured.has(id),
+      }));
+    });
+    handle("provider-save", async (id, options) => {
+      validateProvider(id);
+      if (!options || typeof options !== "object") throw new Error("服务配置无效。");
+      const model = options.model || providers[id].model;
+      if (typeof model !== "string" || !/^[a-zA-Z0-9._:-]{2,100}$/.test(model)) throw new Error("模型名称无效。");
+      const region = options.region === "global" ? "global" : "cn";
+      if (typeof options.key === "string" && options.key.trim()) {
+        if (options.key.length > 500) throw new Error("API Key 过长。");
+        await secrets.save(id, options.key.trim());
+      }
+      state.providers[id] = { model, region };
+      await persist();
+      return true;
+    });
+    handle("provider-remove", async (id) => {
+      validateProvider(id);
+      await secrets.save(id, null);
+      return true;
+    });
+    handle("provider-verify", async (id) => {
+      validateProvider(id);
+      const key = await secrets.get(id);
+      if (!key) throw new Error("请先保存 API Key。");
+      return verifyProvider(id, key, state.providers[id]?.region);
+    });
+    handle("translate", async (id, input) => {
+      if (!state.library.some((entry) => entry.id === id)) throw new Error("文档不存在。");
+      if (!input || typeof input !== "object") throw new Error("翻译请求无效。");
+      validateProvider(input.provider);
+      const key = await secrets.get(input.provider);
+      if (!key) throw new Error("请先配置 API Key。");
+      return translateText({
+        provider: input.provider, key, region: state.providers[input.provider]?.region,
+        model: state.providers[input.provider]?.model, text: input.text, target: input.target,
+      });
+    });
+    handle("translation-load", async (id, provider, target) => {
+      const file = await translationFile(id, provider, target);
+      return fs.readFile(file, "utf8").then(JSON.parse).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+    });
+    handle("translation-save", async (id, provider, target, results) => {
+      const file = await translationFile(id, provider, target);
+      if (!Array.isArray(results) || results.length > 5000) throw new Error("翻译结果无效。");
+      const data = JSON.stringify(results);
+      if (data.length > 10_000_000) throw new Error("翻译结果过大。");
+      await fs.writeFile(file + ".tmp", data, "utf8");
+      await fs.rename(file + ".tmp", file);
+    });
+    handle("engine-installed", (engine) => engines.installed(engine));
+    handle("engine-install", (engine) => engines.install(engine));
+    handle("engine-parse", (id, engine) => {
+      const entry = state.library.find((item) => item.id === id);
+      if (!entry) throw new Error("文档不存在。");
+      return engines.parse(engine, entry.path);
+    });
+    handle("engine-status", (jobId) => engines.status(jobId));
+    handle("engine-cancel", (jobId) => engines.cancel(jobId));
     handle("fullscreen", (value) => {
       win.setFullScreen(typeof value === "boolean" ? value : !win.isFullScreen());
       return win.isFullScreen();

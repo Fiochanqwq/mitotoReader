@@ -1,5 +1,6 @@
 import { _electron as electron } from "playwright-core";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import JSZip from "jszip";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
@@ -19,6 +20,23 @@ for (let i = 1; i <= 2; i++) {
   page.drawText("Offline reading. Your documents stay with you.", { x: 56, y: 610, size: 15, font });
 }
 await writeFile(fixture, await doc.save());
+async function officeFixture(name, files) {
+  const zip = new JSZip();
+  for (const [file, content] of Object.entries(files)) zip.file(file, content);
+  const target = join(tmp, name);
+  await writeFile(target, await zip.generateAsync({ type: "nodebuffer" }));
+  return target;
+}
+const docx = await officeFixture("reader.docx", {
+  "word/document.xml": '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Hello DOCX reader</w:t></w:r></w:p></w:body></w:document>',
+});
+const pptx = await officeFixture("reader.pptx", {
+  "ppt/slides/slide1.xml": '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:sp><a:p><a:r><a:t>Hello PPTX slide</a:t></a:r></a:p></p:sp></p:sld>',
+});
+const xlsx = await officeFixture("reader.xlsx", {
+  "xl/sharedStrings.xml": '<sst><si><t>Hello XLSX cell</t></si></sst>',
+  "xl/worksheets/sheet1.xml": '<worksheet><sheetData><row><c t="s"><v>0</v></c></row></sheetData></worksheet>',
+});
 let app, page;
 const errors = [];
 async function launch(file) {
@@ -66,21 +84,46 @@ try {
   await page.waitForFunction(() => document.querySelector(".textLayer")?.textContent.includes("ReaderTestToken"));
   await page.locator("#next").click();
   await page.waitForFunction(() => document.querySelector(".textLayer")?.textContent.includes("page 2"));
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForFunction(() => document.getElementById("page-number").value === "1");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.getElementById("page-number").value === "2");
   const beforeZoom = parseInt(await page.locator("#zoom-label").textContent());
   await page.locator("#zoom-in").click();
   await page.waitForFunction(
     (before) => parseInt(document.getElementById("zoom-label").textContent) > before,
     beforeZoom,
   );
+  const wheelZoom = parseInt(await page.locator("#zoom-label").textContent());
+  await page
+    .locator("#reading-stage")
+    .dispatchEvent("wheel", { ctrlKey: true, deltaY: -100, clientX: 400, clientY: 300 });
+  await page.waitForFunction(
+    (before) => parseInt(document.getElementById("zoom-label").textContent) > before,
+    wheelZoom,
+  );
+  await page.keyboard.press("F9");
+  assert.equal(await page.locator("#reader").getAttribute("class"), "focus-mode");
+  assert.equal(await page.evaluate(() => document.fullscreenElement === null), true);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#reader").getAttribute("class"), "");
+  await page.waitForFunction(() => document.querySelector(".textLayer")?.textContent.includes("ReaderTestToken"));
   const selection = await page.evaluate(() => {
     const range = document.createRange();
     range.selectNodeContents(document.querySelector(".textLayer"));
     const selection = getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
+    document.dispatchEvent(new MouseEvent("mouseup"));
     return selection.toString();
   });
   assert.match(selection, /ReaderTestToken/);
+  await page.keyboard.press("Control+t");
+  assert.equal(await page.locator("#quick-toolbox").isVisible(), true);
+  await page.locator("#quick-highlight").click();
+  await page.waitForFunction(() => document.querySelectorAll(".annotation-highlight").length > 0);
+  await page.keyboard.press("Control+t");
+  assert.equal(await page.locator("#quick-toolbox").isVisible(), false);
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
   assert.equal(
     await page.evaluate(() =>
@@ -90,7 +133,7 @@ try {
     ),
     true,
   );
-  await page.locator("#ocr-toggle").click();
+  await page.locator("#tools-toggle").click();
   await page.locator("#ocr-language").selectOption("eng");
   await page.locator("#ocr-start").click();
   await page.waitForFunction(
@@ -131,6 +174,25 @@ try {
   assert.match(batch, /第 2 页/);
   assert.match(batch, /page 1/);
   assert.match(batch, /page 2/);
+  await page.locator("#workbench-toggle").click();
+  assert.equal(await page.locator("#workbench").isVisible(), true);
+  await page.locator("#workbench-api-tab").click();
+  await page.locator("#provider-cards button").first().waitFor();
+  await page.locator("#provider-key").fill("integration-secret-key");
+  await page.locator("#provider-save").click();
+  await page.waitForFunction(() => document.getElementById("provider-status").textContent.includes("已保存"));
+  assert.equal((await readFile(join(profile, "reader.json"), "utf8")).includes("integration-secret-key"), false);
+  await page.locator("#provider-remove").click();
+  await page.locator("#workbench-ocr-tab").click();
+  await page.locator("#ocr-all").click();
+  await page.waitForFunction(
+    () => document.getElementById("ocr-status").textContent.startsWith("已完成 · 2 页"),
+    null,
+    { timeout: 120000 },
+  );
+  assert.match(await page.locator("#ocr-result").inputValue(), /第 2 页/);
+  await page.locator("#workbench-back").click();
+  await page.locator("#tools-toggle").click();
   await page.locator("#ocr-pages").fill("");
   await page.locator("#ocr-region").click();
   const region = await page.locator(".crop-overlay").boundingBox();
@@ -158,11 +220,13 @@ try {
   await close();
   await launch(fixture);
   assert.equal(await page.locator("#page-number").inputValue(), "2");
+  await page.waitForFunction(() => document.querySelector("#annotations-list .bookmark-row") && document.querySelector(".annotation-highlight"));
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.locator("#theme").click();
   await close();
   await launch(epub);
   await page.waitForFunction(() => document.querySelector("#viewport iframe")?.contentDocument?.querySelector("ruby"));
+  await page.locator("#tools-toggle").click();
   await page.locator("#type-toggle").click();
   await page.locator("#writing-mode").selectOption("vertical");
   await page.locator("#font-size").fill("130");
@@ -182,9 +246,14 @@ try {
   assert.equal(await page.locator("#writing-mode").inputValue(), "horizontal");
   assert.equal(await page.locator("#font-size").inputValue(), "130");
   await close();
+  for (const [file, expected] of [[docx, "Hello DOCX reader"], [pptx, "Hello PPTX slide"], [xlsx, "Hello XLSX cell"]]) {
+    await launch(file);
+    await page.waitForFunction((value) => document.querySelector(".structured-page")?.textContent.includes(value), expected);
+    await close();
+  }
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: PDF rendering/text/position, EPUB ruby/direction/settings, offline English OCR/copy/export/cancel, theme, isolation.",
+    "PASS: PDF rendering/text/position, arrows/wheel/focus/drawer/workbench, EPUB ruby/direction/settings, offline English OCR/copy/export/cancel, theme, isolation.",
   );
 } finally {
   await close();

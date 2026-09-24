@@ -3,7 +3,11 @@ const { createReadStream } = require("node:fs");
 const { createHash } = require("node:crypto");
 const path = require("node:path");
 
-const extensions = new Set([".pdf", ".epub", ".png", ".jpg", ".jpeg"]);
+const extensions = new Set([
+  ".pdf", ".epub", ".png", ".jpg", ".jpeg",
+  ".docx", ".pptx", ".xlsx", ".odt", ".odp", ".ods",
+  ".txt", ".md", ".html", ".htm", ".csv", ".tsv", ".rtf",
+]);
 const fileLimit = 256 * 1024 * 1024;
 function migrate(saved = {}) {
   const library = Array.isArray(saved.library) ? saved.library : Array.isArray(saved.recent) ? saved.recent : [];
@@ -11,12 +15,13 @@ function migrate(saved = {}) {
     version: 2,
     library: library.filter((x) => x && typeof x.id === "string" && typeof x.path === "string"),
     books: saved.books && typeof saved.books === "object" ? saved.books : {},
+    providers: saved.providers && typeof saved.providers === "object" ? saved.providers : {},
     theme: saved.theme === "dark" ? "dark" : "light",
   };
 }
 async function inspect(file, known) {
   const ext = path.extname(file).toLowerCase();
-  if (!extensions.has(ext)) throw new Error("支持 PDF、EPUB、PNG 和 JPEG。");
+  if (!extensions.has(ext)) throw new Error("暂不支持此文件格式。");
   const stat = await fs.stat(file);
   if (!stat.isFile() || stat.size > fileLimit) throw new Error("文件过大：上限为 256 MB。");
   let id = known?.size === stat.size && known?.mtime === stat.mtimeMs ? known.id : null;
