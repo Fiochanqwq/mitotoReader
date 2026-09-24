@@ -3,13 +3,13 @@
   "productName": "mitotoReader",
   "version": "0.2.0-alpha.1",
   "private": true,
-  "description": "A minimal offline reader for Windows",
+  "description": "A minimal Windows document reader with optional local OCR and AI translation",
   "license": "GPL-3.0-only",
   "main": "app/main.cjs",
   "scripts": {
     "build": "node cmd/build.ts",
     "start": "electron .",
-    "test": "node --test tests/startup.test.cjs tests/runtime.test.cjs tests/library.test.cjs tests/reader-utils.test.mjs && node tests/smoke.mjs && node tests/features.mjs && node tests/long-epub.mjs",
+    "test": "node --test tests/startup.test.cjs tests/runtime.test.cjs tests/library.test.cjs tests/reader-utils.test.mjs tests/providers.test.cjs && node tests/smoke.mjs && node tests/features.mjs && node tests/long-epub.mjs",
     "package": "node cmd/build.ts --package",
     "installer": "node cmd/installer.mjs"
   },
@@ -19,6 +19,7 @@
   "dependencies": {
     "@readium/css": "2.0.5",
     "epubjs": "0.3.93",
+    "jszip": "3.10.2",
     "pdfjs-dist": "6.3.289",
     "tesseract.js": "7.0.0"
   },

@@ -3,6 +3,8 @@ import ePub from "epubjs";
 import { getDocument, GlobalWorkerOptions, TextLayer } from "pdfjs-dist";
 import { libraryView } from "./library.js";
 import { ocrController } from "./ocr.js";
+import { parseDocument } from "./document-formats.js";
+import { workbenchController } from "./workbench.js";
 import { fitScale, rasterScale, snippets } from "./reader-utils.mjs";
 import horizontalCss from "@readium/css/css/dist/cjk-horizontal/ReadiumCSS-after.css";
 import verticalCss from "@readium/css/css/dist/cjk-vertical/ReadiumCSS-after.css";
@@ -10,7 +12,7 @@ import verticalCss from "@readium/css/css/dist/cjk-vertical/ReadiumCSS-after.css
 const $ = (id) => document.getElementById(id);
 const host = window.mitoto;
 GlobalWorkerOptions.workerSrc = new URL("./pdf/pdf.worker.mjs", location.href).href;
-let current, pdf, pdfLoadingTask, book, rendition, imageUrl;
+let current, pdf, pdfLoadingTask, book, rendition, imageUrl, parsedPages;
 let pageNumber = 1,
   zoom = 1,
   generation = 0,
@@ -22,9 +24,12 @@ let messageTimer,
   loadQueue = Promise.resolve(),
   resizeTimer;
 let searchHighlight,
-  resizing = false;
+  resizing = false,
+  zoomInteraction = 0;
+let selectedText = "", currentSelection = null;
 const textCache = new Map();
-const panels = ["toc-panel", "type-panel", "ocr-panel", "search-panel", "bookmarks-panel"];
+const panels = ["toc-panel", "type-panel", "ocr-panel", "search-panel", "bookmarks-panel", "annotations-panel"];
+const toolButtons = ["toc-toggle", "search-toggle", "bookmarks-toggle", "annotations-toggle", "type-toggle", "ocr-toggle"];
 const library = libraryView(
   host,
   safe(async (id) => {
@@ -37,6 +42,11 @@ const library = libraryView(
   message,
 );
 const ocr = ocrController({ host, document: () => current, pdf: () => pdf, page: () => pageNumber, message });
+const workbench = workbenchController({
+  host, current: () => current, pdf: () => pdf, book: () => book,
+  pages: () => parsedPages, pageNumber: () => pageNumber,
+  selectedText: () => selectedText || window.getSelection()?.toString().trim() || "", message,
+});
 let rendering = Promise.resolve();
 let settings = {};
 const defaults = { mode: "publisher", font: "'Yu Mincho', 'SimSun', serif", size: 110, line: 1.8, margin: 32 };
@@ -73,6 +83,12 @@ async function dispose() {
   textCache.clear();
   clearTimeout(resizeTimer);
   await ocr.reset();
+  workbench.reset();
+  selectedText = "";
+  currentSelection = null;
+  $("quick-toolbox").hidden = true;
+  $("quick-note-editor").hidden = true;
+  $("quick-ocr-result").hidden = true;
   renderTask?.cancel();
   textLayer?.cancel();
   await rendering.catch(() => {});
@@ -80,7 +96,7 @@ async function dispose() {
   book?.destroy();
   if (pdfLoadingTask) await pdfLoadingTask.destroy();
   if (imageUrl) URL.revokeObjectURL(imageUrl);
-  pdf = pdfLoadingTask = book = rendition = imageUrl = null;
+  pdf = pdfLoadingTask = book = rendition = imageUrl = parsedPages = null;
   $("viewport").replaceChildren();
   $("toc").replaceChildren();
   $("ocr-result").value = "";
@@ -94,6 +110,7 @@ function load(doc) {
 }
 async function loadDocument(doc) {
   if (!doc) return;
+  leaveWorkbench();
   await dispose();
   current = { ...doc, bytes: undefined };
   settings = { ...defaults, ...doc.settings };
@@ -101,10 +118,11 @@ async function loadDocument(doc) {
   zoom = Math.min(3, Math.max(0.05, Number(settings.zoom) || 1));
   settings.fit = ["page", "width", "manual"].includes(settings.fit) ? settings.fit : "page";
   settings.bookmarks = Array.isArray(settings.bookmarks) ? settings.bookmarks : [];
+  settings.annotations = Array.isArray(settings.annotations) ? settings.annotations : [];
   $("fit-mode").value = settings.fit;
-  $("search-toggle").disabled = !["epub", "pdf"].includes(doc.kind);
+  $("search-toggle").disabled = false;
   $("ocr-pages-label").hidden = doc.kind !== "pdf";
-  $("search-status").textContent = "搜索 PDF 文字层或 EPUB 正文；扫描页请使用 OCR。";
+  $("search-status").textContent = "搜索可读取的文档文字；扫描页请使用 OCR。";
   $("search-cancel").hidden = true;
   $("reading-stage").style.padding = doc.kind === "epub" ? settings.margin + "px" : "24px";
   $("home").hidden = true;
@@ -113,18 +131,22 @@ async function loadDocument(doc) {
   $("kind-label").textContent = doc.kind.toUpperCase();
   $("reading-status").textContent = "正在打开…";
   $("viewport").className = doc.kind;
-  $("page-number").disabled = doc.kind !== "pdf";
-  $("zoom-tools").hidden = doc.kind === "epub";
+  $("page-number").disabled = ["epub", "png", "jpg", "jpeg"].includes(doc.kind);
+  $("zoom-tools").hidden = !["pdf", "png", "jpg", "jpeg"].includes(doc.kind);
   $("type-toggle").disabled = doc.kind !== "epub";
-  $("ocr-toggle").disabled = doc.kind === "epub";
-  $("toc-toggle").disabled = doc.kind !== "epub" && doc.kind !== "pdf";
+  $("ocr-toggle").disabled = !["pdf", "png", "jpg", "jpeg"].includes(doc.kind);
+  $("toc-toggle").disabled = ["png", "jpg", "jpeg"].includes(doc.kind);
   for (const id of panels) $(id).hidden = true;
+  $("tool-drawer").hidden = true;
+  $("tools-toggle").setAttribute("aria-expanded", "false");
   try {
     if (doc.kind === "pdf") await loadPdf(doc.bytes);
     else if (doc.kind === "epub") await loadEpub(doc.bytes);
-    else await loadImage(doc.bytes, doc.kind);
+    else if (["png", "jpg", "jpeg"].includes(doc.kind)) await loadImage(doc.bytes, doc.kind);
+    else await loadStructured(doc.bytes, doc.kind);
     $("reading-status").textContent = "本地阅读";
     drawBookmarks();
+    drawAnnotations();
   } catch (error) {
     await dispose();
     current = null;
@@ -229,6 +251,7 @@ function renderPdf(preserveScroll = false) {
       settings.zoom = zoom;
       save();
       updatePages(pdf.numPages);
+      drawAnnotations();
       stage.scrollTop = preserveScroll ? scroll.y * stage.scrollHeight : 0;
       stage.scrollLeft = preserveScroll ? scroll.x * stage.scrollWidth : 0;
     });
@@ -265,6 +288,44 @@ function renderImage() {
   updatePages(1);
   settings.zoom = zoom;
   save();
+}
+async function loadStructured(bytes, kind) {
+  $("reading-status").textContent = "正在解析文档…";
+  parsedPages = await parseDocument(kind, bytes);
+  $("viewport").style.width = "100%";
+  $("viewport").style.height = "auto";
+  pageNumber = Math.min(pageNumber, parsedPages.length);
+  $("toc").replaceChildren();
+  parsedPages.forEach((page, index) => {
+    const button = document.createElement("button");
+    button.textContent = page.title;
+    button.onclick = () => { pageNumber = index + 1; renderStructured(); };
+    $("toc").append(button);
+  });
+  renderStructured();
+}
+function renderStructured() {
+  if (!parsedPages) return;
+  const page = parsedPages[pageNumber - 1];
+  const article = document.createElement("article");
+  article.className = "structured-page";
+  const heading = document.createElement("h2");
+  heading.textContent = page.title;
+  article.append(heading);
+  for (const item of page.paragraphs) {
+    const node = document.createElement(item.type === "heading" ? "h3" : "p");
+    node.className = item.type;
+    node.textContent = item.text;
+    article.append(node);
+  }
+  $("viewport").replaceChildren(article);
+  settings.page = pageNumber;
+  settings.progress = pageNumber / parsedPages.length;
+  save();
+  updatePages(parsedPages.length);
+  drawBookmarks();
+  drawAnnotations();
+  $("reading-stage").scrollTo(0, 0);
 }
 function updatePages(total) {
   $("page-number").value = String(pageNumber);
@@ -318,6 +379,11 @@ async function loadEpub(bytes) {
   rendition.themes.registerCss("vertical", verticalCss);
   rendition.hooks.content.register((contents) => {
     contents.document.addEventListener("keydown", (event) => onKeydown(event).catch((error) => message(error.message)));
+    contents.document.addEventListener("mouseup", () => {
+      const selection = contents.document.getSelection();
+      if (!selection?.rangeCount || !selection.toString().trim()) return;
+      captureSelection(selection, contents.cfiFromRange(selection.getRangeAt(0)));
+    });
     contents.document.addEventListener(
       "click",
       (event) => {
@@ -367,6 +433,7 @@ async function loadEpub(bytes) {
   } catch {
     await rendition.display();
   }
+  for (const mark of settings.annotations || []) if (mark.cfi) rendition.annotations.highlight(mark.cfi);
 }
 function applyType() {
   $("font-value").textContent = `${settings.size || defaults.size}%`;
@@ -394,18 +461,40 @@ function applyType() {
   if (rendition.manager?.isRendered()) scheduleResize();
 }
 async function turn(delta) {
-  if (rendition) return delta > 0 ? rendition.next() : rendition.prev();
-  if (!pdf) return;
-  pageNumber = Math.max(1, Math.min(pdf.numPages, pageNumber + delta));
-  await renderPdf();
+  if (!rendition && !pdf && !parsedPages) return;
+  if (pdf || parsedPages) {
+    const next = Math.max(1, Math.min(pdf?.numPages || parsedPages.length, pageNumber + delta));
+    if (next === pageNumber) return;
+    pageNumber = next;
+  }
+  $("viewport").classList.add("page-changing");
+  try {
+    if (rendition) return delta > 0 ? rendition.next() : rendition.prev();
+    if (pdf) await renderPdf();
+    else renderStructured();
+  } finally {
+    $("viewport").classList.remove("page-changing");
+  }
 }
-async function changeZoom(delta) {
+async function changeZoom(delta, anchor) {
   if (rendition || !current) return;
+  const interaction = ++zoomInteraction;
+  const stage = $("reading-stage"),
+    before = $("viewport").getBoundingClientRect();
+  const point =
+    anchor && before.width && before.height
+      ? { x: (anchor.x - before.left) / before.width, y: (anchor.y - before.top) / before.height }
+      : null;
   settings.fit = "manual";
   $("fit-mode").value = "manual";
   zoom = Math.min(3, Math.max(0.25, Math.round((zoom + delta) * 100) / 100));
-  if (pdf) await renderPdf();
+  if (pdf) await renderPdf(!!point);
   else renderImage();
+  if (point && anchor && interaction === zoomInteraction) {
+    const after = $("viewport").getBoundingClientRect();
+    stage.scrollLeft += after.left + point.x * after.width - anchor.x;
+    stage.scrollTop += after.top + point.y * after.height - anchor.y;
+  }
 }
 function thumbnail(source) {
   const canvas = document.createElement("canvas");
@@ -447,9 +536,56 @@ function openPanel(id) {
   const opening = $(id).hidden;
   for (const panel of panels) $(panel).hidden = true;
   $(id).hidden = !opening;
+  $("tool-drawer").hidden = !opening;
+  $("tools-toggle").setAttribute("aria-expanded", String(opening));
   scheduleResize();
   if (opening && id === "search-panel") $("search-query").focus();
 }
+function closeDrawer() {
+  for (const panel of panels) $(panel).hidden = true;
+  $("tool-drawer").hidden = true;
+  $("tools-toggle").setAttribute("aria-expanded", "false");
+  scheduleResize();
+}
+function setFocus(value) {
+  document.body.classList.toggle("focus-reading", value);
+  $("reader").classList.toggle("focus-mode", value);
+  $("focus-top-trigger").hidden = !value;
+  $("focus-bottom-trigger").hidden = !value;
+  $("focus-toggle").textContent = value ? "⌄" : "⌃";
+  $("focus-toggle").setAttribute("aria-label", value ? "退出纯净阅读" : "进入纯净阅读");
+  if (value) closeDrawer();
+  scheduleResize();
+}
+function enterWorkbench(tab = "ocr") {
+  if (!current) return;
+  closeDrawer();
+  setFocus(false);
+  $("workbench-document").textContent = current.name;
+  $("ocr-all").hidden = !pdf;
+  $("workbench-hint").textContent = pdf
+    ? "可识别整份 PDF，也可输入自选页码。"
+    : current.kind === "epub"
+      ? "EPUB 是可选择文字的电子书，当前无需 OCR。"
+      : "图片可在右侧识别。";
+  $("ocr-panel").hidden = !["pdf", "png", "jpg", "jpeg"].includes(current.kind);
+  $("workbench-slot").append($("ocr-panel"));
+  $("reader").hidden = true;
+  document.querySelector(".topbar").hidden = true;
+  $("workbench").hidden = false;
+  workbench.open(tab);
+}
+function leaveWorkbench() {
+  if ($("workbench").hidden) return;
+  $("ocr-panel").hidden = true;
+  $("drawer-content").append($("ocr-panel"));
+  $("workbench").hidden = true;
+  document.querySelector(".topbar").hidden = false;
+  $("reader").hidden = !current;
+  scheduleResize();
+}
+for (const id of toolButtons) $("drawer-tabs").append($(id));
+for (const id of panels) $("drawer-content").append($(id));
 function bookmarkKey() {
   return rendition ? settings.cfi : String(pageNumber);
 }
@@ -468,6 +604,9 @@ function drawBookmarks() {
       else if (pdf) {
         pageNumber = Number(mark.key);
         await renderPdf();
+      } else if (parsedPages) {
+        pageNumber = Number(mark.key);
+        renderStructured();
       }
     });
     const remove = document.createElement("button");
@@ -482,6 +621,86 @@ function drawBookmarks() {
     $("bookmarks").append(row);
   }
   if (!marks.length) $("bookmarks").textContent = "暂无书签，按 Ctrl+D 添加当前位置。";
+}
+function captureSelection(selection, cfi = null) {
+  const value = selection?.toString().trim();
+  if (!value || value.length > 3000) return;
+  const range = selection.getRangeAt(0);
+  const bounds = $("viewport").getBoundingClientRect();
+  const rects = cfi ? [] : [...range.getClientRects()]
+    .filter((rect) => rect.width > 1 && rect.height > 1)
+    .slice(0, 100)
+    .map((rect) => ({
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      w: rect.width / bounds.width,
+      h: rect.height / bounds.height,
+    }))
+    .filter((rect) => rect.x >= -0.01 && rect.y >= -0.01 && rect.x + rect.w <= 1.01 && rect.y + rect.h <= 1.01);
+  if (!cfi && !rects.length) return;
+  selectedText = value;
+  currentSelection = { quote: value.slice(0, 1000), page: pageNumber, cfi, rects };
+}
+document.addEventListener("mouseup", () => {
+  if (!current || rendition) return;
+  const selection = window.getSelection();
+  if (selection?.rangeCount && $("viewport").contains(selection.anchorNode)) captureSelection(selection);
+});
+function drawAnnotations() {
+  $("viewport").querySelector(".annotation-overlay")?.remove();
+  if (!rendition) {
+    const overlay = document.createElement("div");
+    overlay.className = "annotation-overlay";
+    for (const mark of settings.annotations || []) {
+      if (mark.page !== pageNumber) continue;
+      for (const rect of mark.rects || []) {
+        const box = document.createElement("div");
+        box.className = "annotation-highlight";
+        Object.assign(box.style, {
+          left: `${rect.x * 100}%`, top: `${rect.y * 100}%`,
+          width: `${rect.w * 100}%`, height: `${rect.h * 100}%`,
+        });
+        box.title = mark.note || mark.quote;
+        overlay.append(box);
+      }
+    }
+    $("viewport").append(overlay);
+  }
+  const list = $("annotations-list");
+  list.replaceChildren();
+  for (const mark of settings.annotations || []) {
+    const row = document.createElement("div"), jump = document.createElement("button"), remove = document.createElement("button");
+    row.className = "bookmark-row";
+    jump.textContent = `${mark.cfi ? "EPUB" : `第 ${mark.page} 页`} · ${mark.quote.slice(0, 32)}${mark.note ? ` — ${mark.note.slice(0, 40)}` : ""}`;
+    jump.onclick = safe(async () => {
+      if (mark.cfi && rendition) await rendition.display(mark.cfi);
+      else if (pdf) { pageNumber = mark.page; await renderPdf(); }
+      else if (parsedPages) { pageNumber = mark.page; renderStructured(); }
+    });
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "删除批注");
+    remove.onclick = () => {
+      settings.annotations = settings.annotations.filter((item) => item.id !== mark.id);
+      if (mark.cfi) rendition?.annotations.remove(mark.cfi, "highlight");
+      save(); drawAnnotations();
+    };
+    row.append(jump, remove);
+    list.append(row);
+  }
+  if (!list.children.length) list.textContent = "暂无高亮或批注。选中文字后按 Ctrl+T 使用快捷工具。";
+}
+function addAnnotation(note = "") {
+  if (!currentSelection || (!currentSelection.cfi && currentSelection.page !== pageNumber)) return message("请先在当前页选中文字。");
+  if (settings.annotations.length >= 500) return message("每份文档最多保存 500 条标记。");
+  const mark = { ...currentSelection, id: crypto.randomUUID(), note: note.slice(0, 2000), created: Date.now() };
+  settings.annotations.push(mark);
+  if (JSON.stringify(settings).length > 240_000) {
+    settings.annotations.pop();
+    return message("批注存储已满，请删除部分旧标记。");
+  }
+  if (mark.cfi) rendition?.annotations.highlight(mark.cfi);
+  save(); drawAnnotations();
+  message(note ? "已保存批注" : "已高亮选中文字");
 }
 function toggleBookmark() {
   if (!current || !bookmarkKey()) return;
@@ -505,15 +724,16 @@ function toggleBookmark() {
 }
 async function search() {
   const query = $("search-query").value.trim();
-  if (!query || (!pdf && !book)) return;
+  if (!query || (!pdf && !book && !parsedPages)) return;
   if (query.length > 200) return message("搜索词请控制在 200 字以内。");
   const token = ++searchToken,
     sourcePdf = pdf,
-    sourceBook = book;
+    sourceBook = book,
+    sourcePages = parsedPages;
   $("search-results").replaceChildren();
   $("search-cancel").hidden = false;
   let count = 0;
-  const total = sourcePdf ? sourcePdf.numPages : sourceBook.spine.spineItems.length;
+  const total = sourcePdf ? sourcePdf.numPages : sourceBook ? sourceBook.spine.spineItems.length : sourcePages.length;
   const add = (label, excerpt, jump) => {
     const button = document.createElement("button");
     const title = document.createElement("strong");
@@ -544,6 +764,14 @@ async function search() {
             pageNumber = index + 1;
             searchHighlight = query;
             await renderPdf();
+          });
+      } else if (sourcePages) {
+        const content = sourcePages[index].paragraphs.map((x) => x.text).join("\n");
+        for (const excerpt of snippets(content, query, 200 - count))
+          add(sourcePages[index].title, excerpt, () => {
+            if (parsedPages !== sourcePages) return;
+            pageNumber = index + 1;
+            renderStructured();
           });
       } else {
         const section = sourceBook.spine.spineItems[index];
@@ -599,11 +827,48 @@ $("fit-mode").onchange = safe(async () => {
   else renderImage();
 });
 $("fullscreen").onclick = safe(() => host.fullscreen());
+$("quick-close").onclick = () => { $("quick-toolbox").hidden = true; $("quick-note-editor").hidden = true; $("quick-ocr-result").hidden = true; };
+$("quick-highlight").onclick = () => addAnnotation();
+$("quick-note").onclick = () => {
+  if (!currentSelection) return message("请先选中文字。");
+  $("quick-note-editor").hidden = false;
+  $("quick-note-text").focus();
+};
+$("quick-note-save").onclick = () => { addAnnotation($("quick-note-text").value); $("quick-note-text").value = ""; $("quick-note-editor").hidden = true; };
+$("quick-note-cancel").onclick = () => { $("quick-note-editor").hidden = true; };
+$("quick-ocr").onclick = () => {
+  if (!["pdf", "png", "jpg", "jpeg"].includes(current?.kind)) return message("此文档已有可选文字，请直接选中。");
+  ocr.selectCrop();
+  $("quick-ocr-result").hidden = false;
+  $("quick-ocr-status").textContent = "在页面上拖出区域，然后点击“识别所选区域”。";
+};
+$("quick-ocr-run").onclick = safe(async () => {
+  if (!ocr.hasSelectedRegion()) return message("请先在页面上框选区域。");
+  $("quick-ocr-status").textContent = "正在本机识别…";
+  await ocr.start();
+  $("quick-ocr-text").value = $("ocr-result").value;
+  $("quick-ocr-status").textContent = $("ocr-status").textContent;
+});
+$("quick-ocr-copy").onclick = safe(async () => { await host.copy($("quick-ocr-text").value); message("已复制识别文字"); });
+$("quick-ocr-close").onclick = () => { $("quick-ocr-result").hidden = true; ocr.clearCrop(); };
+$("quick-translate").onclick = () => {
+  if (!selectedText) return message("请先选中文字。");
+  enterWorkbench("translate");
+  $("translate-scope").value = "selection";
+};
+$("tools-toggle").onclick = () =>
+  $("tool-drawer").hidden ? openPanel(["pdf", "png", "jpg", "jpeg"].includes(current?.kind) ? "ocr-panel" : "toc-panel") : closeDrawer();
+$("drawer-close").onclick = closeDrawer;
+$("workbench-toggle").onclick = () => enterWorkbench();
+$("workbench-back").onclick = leaveWorkbench;
+$("ocr-all").onclick = () => ocr.start({ allPages: true }).catch((error) => message(error.message));
 $("shortcuts-toggle").onclick = () => $("shortcuts").showModal();
 $("shortcuts-close").onclick = () => $("shortcuts").close();
 
 for (const id of ["open", "home-open"]) $(id).onclick = safe(async () => load(await host.open()));
 $("home-button").onclick = safe(async () => {
+  leaveWorkbench();
+  setFocus(false);
   await loadQueue.catch(() => {});
   await dispose();
   current = null;
@@ -617,6 +882,7 @@ for (const [button, panel] of [
   ["toc-toggle", "toc-panel"],
   ["search-toggle", "search-panel"],
   ["bookmarks-toggle", "bookmarks-panel"],
+  ["annotations-toggle", "annotations-panel"],
   ["type-toggle", "type-panel"],
   ["ocr-toggle", "ocr-panel"],
 ]) {
@@ -625,25 +891,19 @@ for (const [button, panel] of [
 document.querySelectorAll("[data-close]").forEach((button) => {
   button.onclick = () => {
     $(button.dataset.close).hidden = true;
+    closeDrawer();
     scheduleResize();
   };
 });
-$("focus-toggle").onclick = () => {
-  document.querySelector(".reader-tools").hidden = true;
-  $("restore-tools").hidden = false;
-  scheduleResize();
-};
-$("restore-tools").onclick = () => {
-  document.querySelector(".reader-tools").hidden = false;
-  $("restore-tools").hidden = true;
-  scheduleResize();
-};
+$("focus-toggle").onclick = () => setFocus(!$("reader").classList.contains("focus-mode"));
+$("restore-tools").onclick = () => setFocus(false);
 $("previous").onclick = safe(() => turn(-1));
 $("next").onclick = safe(() => turn(1));
 $("page-number").onchange = safe(async () => {
-  if (!pdf) return;
-  pageNumber = Math.max(1, Math.min(pdf.numPages, Number($("page-number").value) || 1));
-  await renderPdf();
+  if (!pdf && !parsedPages) return;
+  pageNumber = Math.max(1, Math.min(pdf?.numPages || parsedPages.length, Number($("page-number").value) || 1));
+  if (pdf) await renderPdf();
+  else renderStructured();
 });
 $("zoom-out").onclick = safe(() => changeZoom(-0.1));
 $("zoom-in").onclick = safe(() => changeZoom(0.1));
@@ -673,6 +933,10 @@ async function onKeydown(event) {
   const key = event.key.toLowerCase(),
     modifier = event.ctrlKey || event.metaKey;
   const input = /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || event.target.isContentEditable;
+  if (!$("workbench").hidden && key === "escape") {
+    event.preventDefault();
+    return leaveWorkbench();
+  }
   if (key === "f11") {
     event.preventDefault();
     return host.fullscreen();
@@ -680,11 +944,13 @@ async function onKeydown(event) {
   if (key === "escape") {
     event.preventDefault();
     if ($("shortcuts").open) return $("shortcuts").close();
+    if (!$("quick-note-editor").hidden) return $("quick-note-editor").hidden = true;
+    if (!$("quick-ocr-result").hidden) return $("quick-ocr-result").hidden = true;
     if (ocr.hasCrop()) return ocr.clearCrop();
+    if (!$("quick-toolbox").hidden) return $("quick-toolbox").hidden = true;
+    if ($("reader").classList.contains("focus-mode")) return setFocus(false);
     if (panels.some((id) => !$(id).hidden)) {
-      for (const id of panels) $(id).hidden = true;
-      scheduleResize();
-      return;
+      return closeDrawer();
     }
     return host.fullscreen(false);
   }
@@ -693,7 +959,18 @@ async function onKeydown(event) {
     return load(await host.open());
   }
   if (!current) return;
-  if (modifier && key === "f" && (pdf || rendition)) {
+  if (!$("workbench").hidden) return;
+  if (modifier && key === "t") {
+    event.preventDefault();
+    $("quick-toolbox").hidden = !$("quick-toolbox").hidden;
+    if ($("quick-toolbox").hidden) { $("quick-note-editor").hidden = true; $("quick-ocr-result").hidden = true; }
+    return;
+  }
+  if (key === "f9") {
+    event.preventDefault();
+    return setFocus(!$("reader").classList.contains("focus-mode"));
+  }
+  if (modifier && key === "f" && (pdf || rendition || parsedPages)) {
     event.preventDefault();
     $("search-panel").hidden = true;
     openPanel("search-panel");
@@ -714,12 +991,24 @@ async function onKeydown(event) {
     }
     return changeZoom(key === "-" ? -0.1 : 0.1);
   }
-  if (key === "pagedown" || key === "pageup") {
+  if (["pagedown", "pageup", "arrowleft", "arrowright"].includes(key) && !modifier && !event.altKey) {
     event.preventDefault();
-    return turn(key === "pagedown" ? 1 : -1);
+    return turn(key === "pagedown" || key === "arrowright" ? 1 : -1);
   }
 }
 document.addEventListener("keydown", (event) => onKeydown(event).catch((error) => message(error.message)));
+$("reading-stage").addEventListener(
+  "wheel",
+  (event) => {
+    if (!event.ctrlKey || !current || rendition) return;
+    event.preventDefault();
+    if (!event.deltaY) return;
+    void changeZoom(event.deltaY < 0 ? 0.1 : -0.1, { x: event.clientX, y: event.clientY }).catch((error) =>
+      message(error.message),
+    );
+  },
+  { passive: false },
+);
 
 window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();

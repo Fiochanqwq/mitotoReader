@@ -83,7 +83,7 @@ try {
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
   await page.keyboard.press("F11");
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 860));
-  await page.locator("#search-toggle").click();
+  await page.keyboard.press("Control+f");
   await page.locator("#search-query").fill("LibrarySearchToken");
   await page.locator("#search-query").press("Enter");
   await page.waitForFunction(() => document.getElementById("search-status").textContent.startsWith("找到 3 处"));
@@ -93,7 +93,7 @@ try {
   await page.locator("#bookmarks button").first().click();
   await page.waitForFunction(() => document.getElementById("page-number").value === "2");
   // Editing fields must not trigger reader shortcuts.
-  await page.locator("#search-toggle").click();
+  await page.keyboard.press("Control+f");
   await page.locator("#search-query").fill("input");
   await page.locator("#search-query").press("PageDown");
   assert.equal(await page.locator("#page-number").inputValue(), "2");
@@ -117,7 +117,7 @@ try {
   await ready();
   assert.equal(await page.locator("#page-number").inputValue(), "2");
   await openFile(epub);
-  await page.locator("#search-toggle").click();
+  await page.keyboard.press("Control+f");
   await page.locator("#search-query").fill("図書館");
   await page.locator("#search-query").press("Enter");
   await page.waitForFunction(() => document.getElementById("search-status").textContent.startsWith("找到 1 处"));

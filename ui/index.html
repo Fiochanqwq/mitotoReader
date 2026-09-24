@@ -38,6 +38,8 @@
             <option value="epub">EPUB</option>
             <option value="pdf">PDF</option>
             <option value="image">图片</option>
+            <option value="office">Office / OpenDocument</option>
+            <option value="text">文本 / 网页</option>
           </select>
           <select id="library-sort" aria-label="书库排序">
             <option value="recent">最近阅读 / 添加</option>
@@ -52,9 +54,12 @@
     </main>
     <section id="reader" hidden aria-label="阅读器">
       <nav class="reader-tools" aria-label="阅读工具">
+        <button id="tools-toggle" class="quiet" aria-expanded="false" aria-controls="tool-drawer">工具 ☰</button>
+        <button id="workbench-toggle" class="quiet">独立工作台</button>
         <button id="toc-toggle" class="quiet">☰ <span>目录</span></button>
         <button id="search-toggle" class="quiet" title="全文搜索（Ctrl+F）">搜索</button>
         <button id="bookmarks-toggle" class="quiet" title="书签列表">书签</button>
+        <button id="annotations-toggle" class="quiet" title="高亮与批注">批注</button>
         <button id="bookmark-add" class="quiet" title="添加 / 移除书签（Ctrl+D）" aria-label="添加当前位置书签">
           ☆
         </button>
@@ -103,6 +108,10 @@
           </div>
           <p class="small muted">按 Ctrl+D 保存或移除当前位置。</p>
           <div id="bookmarks" class="result-list"></div>
+        </aside>
+        <aside id="annotations-panel" class="panel" hidden>
+          <div class="panel-heading"><h2>高亮与批注</h2><button data-close="annotations-panel" aria-label="关闭批注">×</button></div>
+          <div id="annotations-list" class="result-list"></div>
         </aside>
         <aside id="type-panel" class="panel" hidden>
           <div class="panel-heading">
@@ -187,6 +196,14 @@
             <button id="ocr-copy">复制文字</button><button id="ocr-export">导出 TXT ↗</button>
           </div>
         </aside>
+        <aside id="tool-drawer" hidden aria-label="阅读工具抽屉">
+          <div class="panel-heading">
+            <h2>阅读工具</h2>
+            <button id="drawer-close" aria-label="关闭工具抽屉">×</button>
+          </div>
+          <div id="drawer-tabs"></div>
+          <div id="drawer-content"></div>
+        </aside>
       </div>
       <footer class="reading-footer">
         <span id="kind-label" class="eyebrow"></span>
@@ -201,6 +218,77 @@
         <span id="reading-status" class="muted small">本地阅读</span>
         <button id="shortcuts-toggle" class="quiet" title="查看快捷键">?</button>
       </footer>
+      <button id="focus-top-trigger" class="focus-trigger" hidden aria-label="显示顶部栏">显示顶部栏</button>
+      <button id="focus-bottom-trigger" class="focus-trigger" hidden aria-label="显示翻页栏">显示翻页栏</button>
+      <div id="quick-toolbox" hidden role="toolbar" aria-label="快捷工具箱">
+        <button id="quick-highlight" title="高亮选中内容" aria-label="高亮">▰</button>
+        <button id="quick-note" title="批注选中内容" aria-label="批注">✎</button>
+        <button id="quick-ocr" title="框选文字识别" aria-label="框选识别">▣</button>
+        <button id="quick-translate" title="翻译选中内容" aria-label="翻译">文</button>
+        <button id="quick-close" title="关闭快捷工具箱" aria-label="关闭快捷工具箱">×</button>
+      </div>
+      <div id="quick-note-editor" hidden class="quick-popover">
+        <label>批注内容<textarea id="quick-note-text" maxlength="2000" placeholder="写下这处批注…"></textarea></label>
+        <div class="button-row"><button id="quick-note-save" class="primary">保存批注</button><button id="quick-note-cancel">取消</button></div>
+      </div>
+      <div id="quick-ocr-result" hidden class="quick-popover">
+        <div class="panel-heading"><h2>框选识别</h2><button id="quick-ocr-close" aria-label="关闭识别结果">×</button></div>
+        <p id="quick-ocr-status" class="muted small"></p>
+        <textarea id="quick-ocr-text" aria-label="框选识别文字"></textarea>
+        <div class="button-row"><button id="quick-ocr-run" class="primary">识别所选区域</button><button id="quick-ocr-copy">复制文字</button></div>
+      </div>
+    </section>
+    <section id="workbench" hidden aria-label="独立工作台">
+      <header class="workbench-header">
+        <button id="workbench-back">← 返回阅读</button>
+        <div>
+          <span class="eyebrow">DOCUMENT WORKBENCH</span>
+          <h1>文档工作台</h1>
+          <p id="workbench-document" class="muted small"></p>
+        </div>
+      </header>
+      <nav class="workbench-tabs" aria-label="工作台功能">
+        <button id="workbench-ocr-tab" aria-current="page">文档识别</button>
+        <button id="workbench-translate-tab">翻译</button>
+        <button id="workbench-api-tab">模型服务</button>
+      </nav>
+      <div id="workbench-ocr-view" class="workbench-layout">
+        <div class="workbench-intro">
+          <h2>文档识别</h2>
+          <p>选择快速或高精度解析；轻量识别仍可用于单页和框选。</p>
+          <div class="ocr-modes">
+            <button id="ocr-fast" class="mode-card"><strong>快速 OCR</strong><span>Docling · 结构化提取</span></button>
+            <button id="ocr-accurate" class="mode-card"><strong>高精度 OCR</strong><span>MinerU · 复杂版面</span></button>
+          </div>
+          <p id="engine-status" class="muted small"></p>
+          <div class="button-row"><button id="engine-action" hidden class="primary">开始解析</button><button id="engine-cancel" hidden>取消</button></div>
+          <button id="ocr-all" class="primary">轻量识别整份 PDF</button>
+          <p id="workbench-hint" class="muted small">单页与自选页码也可在右侧操作。</p>
+        </div>
+        <div id="workbench-slot"><div id="engine-output" class="workbench-output" hidden><h2>解析结果</h2><textarea id="engine-result" aria-label="文档解析结果，可编辑"></textarea><div class="button-row"><button id="engine-copy">复制</button><button id="engine-export">导出 TXT</button></div></div></div>
+      </div>
+      <div id="workbench-translate-view" class="workbench-layout" hidden>
+        <div class="workbench-intro">
+          <h2>翻译任务</h2>
+          <label>范围<select id="translate-scope"><option value="selection">选中内容</option><option value="page">当前页</option><option value="document">整份文档</option><option value="ocr">识别结果</option></select></label>
+          <label>目标语言<select id="translate-target"><option value="简体中文">简体中文</option><option value="English">English</option><option value="日本語">日本語</option><option value="繁體中文">繁體中文</option></select></label>
+          <label>模型服务<select id="translate-provider"></select></label>
+          <button id="translate-start" class="primary">开始翻译</button><button id="translate-cancel" hidden>取消任务</button>
+          <p id="translate-status" class="muted small" role="status">先在“模型服务”填写 API Key。</p>
+          <progress id="translate-progress" value="0" max="1" hidden></progress>
+        </div>
+        <div class="workbench-output"><h2>原文与译文</h2><div id="translation-results"></div><div class="button-row"><button id="translation-copy">复制译文</button><button id="translation-export">导出 TXT</button></div></div>
+      </div>
+      <div id="workbench-api-view" class="workbench-layout" hidden>
+        <div class="workbench-intro"><h2>模型服务</h2><p>选择服务商，只需粘贴官方 API Key。模型与接口已预设。</p><div id="provider-cards"></div></div>
+        <div class="workbench-output">
+          <h2 id="provider-title">配置服务商</h2>
+          <label>API Key<input id="provider-key" type="password" autocomplete="off" placeholder="粘贴 API Key" /></label>
+          <details><summary>高级设置</summary><label>模型 ID<input id="provider-model" type="text" /></label><label id="provider-region-label">服务地区<select id="provider-region"><option value="cn">中国</option><option value="global">国际</option></select></label></details>
+          <div class="button-row"><button id="provider-save" class="primary">保存</button><button id="provider-verify">验证连接</button><button id="provider-remove">移除密钥</button></div>
+          <p id="provider-status" class="muted small" role="status"></p><p class="muted small">密钥加密保存在本机。翻译时仅将所选范围的文字发送到当前服务商。</p>
+        </div>
+      </div>
     </section>
     <div id="message" role="status" hidden></div>
     <dialog id="shortcuts">
@@ -219,6 +307,14 @@
         <dd>进入 / 退出全屏</dd>
         <dt>PageUp / PageDown</dt>
         <dd>翻页</dd>
+        <dt>← / →</dt>
+        <dd>上一页 / 下一页</dd>
+        <dt>Ctrl + 鼠标滚轮</dt>
+        <dd>以鼠标位置缩放 PDF 或图片</dd>
+        <dt>F9</dt>
+        <dd>切换纯净阅读</dd>
+        <dt>Ctrl+T</dt>
+        <dd>打开 / 关闭悬浮快捷工具箱</dd>
         <dt>Ctrl+＋ / Ctrl+−</dt>
         <dd>缩放 PDF 或图片</dd>
         <dt>Ctrl+0</dt>

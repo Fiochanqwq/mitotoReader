@@ -18,6 +18,7 @@ export function ocrController({ host, document: getDocument, pdf: getPdf, page: 
   function uiBusy(value) {
     busy = value;
     $("ocr-start").disabled = value;
+    $("ocr-all").disabled = value;
     $("ocr-cancel").hidden = !value;
     $("ocr-progress").hidden = !value;
     for (const id of [
@@ -203,18 +204,21 @@ export function ocrController({ host, document: getDocument, pdf: getPdf, page: 
     workerLanguage = language;
     return worker;
   }
-  async function start() {
+  async function start({ allPages = false } = {}) {
     if (busy || !getDocument()) return;
     const document = getDocument(),
       ticket = ++token;
-    const pages = pageRange(getPdf() ? $("ocr-pages").value : "", getPdf()?.numPages || 1, getPage());
+    const pages =
+      allPages && getPdf()
+        ? Array.from({ length: getPdf().numPages }, (_, index) => index + 1)
+        : pageRange(getPdf() ? $("ocr-pages").value : "", getPdf()?.numPages || 1, getPage());
     const options = {
       version: 2,
       language: $("ocr-language").value,
       layout: $("ocr-language").value === "jpn_vert" ? "5" : $("ocr-layout").value,
       rotation: Number($("ocr-rotation").value),
       contrast: $("ocr-contrast").checked,
-      crop: pages.length === 1 && pages[0] === getPage() ? crop : null,
+      crop: !allPages && pages.length === 1 && pages[0] === getPage() ? crop : null,
     };
     clearTimeout(idle);
     uiBusy(true);
@@ -284,9 +288,12 @@ export function ocrController({ host, document: getDocument, pdf: getPdf, page: 
     $("ocr-start").textContent = $("ocr-pages").value.trim() ? "开始批量识别" : "识别当前页";
   };
   return {
+    start,
+    selectCrop,
     cancel,
     clearCrop,
     hasCrop: () => !!overlay,
+    hasSelectedRegion: () => !!crop,
     reset: async () => {
       await cancel();
       clearCrop();
