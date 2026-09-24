@@ -75,7 +75,8 @@ try {
         document.getElementById("reading-status").textContent === "本地阅读",
     );
     await page.locator("#zoom-in").click();
-    await page.locator("#ocr-toggle").click();
+    await page.locator("#tools-toggle").click();
+    await page.locator("#ocr-panel").waitFor({ state: "visible" });
     await page.locator("#ocr-language").selectOption(sample.lang);
     if (!sample.vertical) await page.locator("#ocr-layout").selectOption("7");
     await page.locator("#ocr-start").click();
