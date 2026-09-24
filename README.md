@@ -2,7 +2,7 @@
 
 独立的 Windows 文档阅读器。现代、极简、黑白灰界面；阅读和本地 OCR 可离线使用，用户主动配置的 AI 翻译需要联网。
 
-**0.2.0-alpha.1 是功能测试版。** 完整多格式阅读器仍在后续路线中。
+**0.2.0-alpha.2 是功能测试版。** 完整多格式阅读器仍在后续路线中。
 
 ![首页](docs/images/home.png)
 
@@ -39,7 +39,7 @@
 
 ## Windows 下载
 
-前往 [GitHub Releases](https://github.com/Fiochanqwq/mitotoReader/releases/tag/v0.2.0-alpha.1)。推荐下载 `mitotoReader-0.2.0-alpha.1-Setup.exe`，双击安装后从桌面或开始菜单启动。无需安装开发环境；安装版阅读数据保存在 `%APPDATA%/mitotoreader/`，卸载时保留。
+前往 [GitHub Releases](https://github.com/Fiochanqwq/mitotoReader/releases/tag/v0.2.0-alpha.2)。推荐下载 `mitotoReader-0.2.0-alpha.2-Setup.exe`，双击安装后从桌面或开始菜单启动。无需安装开发环境；安装版阅读数据保存在 `%APPDATA%/mitotoreader/`，卸载时保留。
 
 也可选择便携 ZIP：
 
@@ -80,10 +80,10 @@ node cmd/build.ts --package
 npm run installer
 ```
 
-输出便携目录 `release/mitotoReader-0.2.0-alpha.1-win32-x64/`，以及 `release/installers/mitotoReader-0.2.0-alpha.1-Setup.exe`。打包后再次运行测试：
+输出便携目录 `release/mitotoReader-0.2.0-alpha.2-win32-x64/`，以及 `release/installers/mitotoReader-0.2.0-alpha.2-Setup.exe`。打包后再次运行测试：
 
 ```powershell
-$env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.2.0-alpha.1-win32-x64/mitotoReader.exe').Path
+$env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.2.0-alpha.2-win32-x64/mitotoReader.exe').Path
 npm test
 ```
 
