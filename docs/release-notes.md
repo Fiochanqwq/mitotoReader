@@ -1,11 +1,11 @@
-# mitotoReader 0.2.0-alpha.3
+# mitotoReader 0.2.0-alpha.4
 
 Windows x64 功能测试版。本次重点升级 AI 文档助手、OCR 安装与多语言支持，以及 PDF 连续阅读体验。
 
 ## 下载与使用
 
-- **安装版：`mitotoReader-0.2.0-alpha.3-Setup.exe`**。双击安装即可使用阅读器与内置轻量 OCR。
-- **便携版：`mitotoReader-0.2.0-alpha.3-win32-x64.zip`**。完整解压后运行 `mitotoReader.exe`，不要只复制 EXE。
+- **安装版：`mitotoReader-0.2.0-alpha.4-Setup.exe`**。双击安装即可使用阅读器与内置轻量 OCR。
+- **便携版：`mitotoReader-0.2.0-alpha.4-win32-x64.zip`**。完整解压后运行 `mitotoReader.exe`，不要只复制 EXE。
 - **源码包与 `SHA256SUMS.txt`**：供查看源码和校验下载文件。
 
 安装版阅读数据保存在 `%APPDATA%/mitotoreader/`；便携版使用程序旁的 `mitoto-data/`。书库引用原文件，请保留原始文档。

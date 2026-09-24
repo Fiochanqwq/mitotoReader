@@ -16,6 +16,7 @@ GlobalWorkerOptions.workerSrc = new URL("./pdf/pdf.worker.mjs", location.href).h
 let current, pdf, pdfLoadingTask, book, rendition, imageUrl, parsedPages;
 let pageNumber = 1,
   zoom = 1,
+  pendingPdfPage = null,
   generation = 0,
   renderTask,
   textLayer;
@@ -52,6 +53,7 @@ const workbench = workbenchController({
 });
 const continuous = continuousPdf({ stage: $("reading-stage"), viewport: $("viewport"), message,
   changed: value => {
+    if (pendingPdfPage !== null) return;
     pageNumber = value; settings.page = value; settings.progress = value / pdf.numPages;
     updatePages(pdf.numPages); drawBookmarks(); drawAnnotations(); ocr.clearCrop(); save();
   }, decorated: () => {
@@ -93,6 +95,7 @@ async function showRecent() {
 }
 async function dispose() {
   continuous.destroy();
+  pendingPdfPage = null;
   generation++;
   documentToken++;
   searchToken++;
@@ -208,7 +211,10 @@ async function loadPdf(bytes) {
   await renderPdf();
 }
 function renderPdf(preserveScroll = false) {
-  const requestedPage = pageNumber;
+  // Keep explicit navigation authoritative while initial layout / resize work
+  // is queued; scroll events from the old layout must not replace its target.
+  if (!preserveScroll || pendingPdfPage === null) pendingPdfPage = pageNumber;
+  const requestedPage = pendingPdfPage;
   renderTask?.cancel();
   textLayer?.cancel();
   const token = ++generation;
@@ -282,7 +288,7 @@ function renderPdf(preserveScroll = false) {
       drawAnnotations();
       stage.scrollTop = preserveScroll ? scroll.y * stage.scrollHeight : 0;
       stage.scrollLeft = preserveScroll ? scroll.x * stage.scrollWidth : 0;
-    });
+    }).finally(() => { if (token === generation) pendingPdfPage = null; });
   return rendering;
 }
 
@@ -938,12 +944,12 @@ $("focus-toggle").onclick = () => setFocus(!$("reader").classList.contains("focu
 $("restore-tools").onclick = () => setFocus(false);
 $("previous").onclick = safe(() => turn(-1));
 $("next").onclick = safe(() => turn(1));
-$("page-number").onchange = safe(async () => {
+$("page-number").onchange = () => {
   if (!pdf && !parsedPages) return;
   pageNumber = Math.max(1, Math.min(pdf?.numPages || parsedPages.length, Number($("page-number").value) || 1));
-  if (pdf) await renderPdf();
+  if (pdf) void renderPdf().catch(error => message(error.message));
   else renderStructured();
-});
+};
 $("page-number").addEventListener("keydown", event => { if (event.key === "Enter") event.currentTarget.blur(); });
 $("zoom-out").onclick = safe(() => changeZoom(-0.1));
 $("zoom-in").onclick = safe(() => changeZoom(0.1));

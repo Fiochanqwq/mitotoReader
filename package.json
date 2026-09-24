@@ -1,7 +1,7 @@
 {
   "name": "mitotoreader",
   "productName": "mitotoReader",
-  "version": "0.2.0-alpha.3",
+  "version": "0.2.0-alpha.4",
   "private": true,
   "description": "A minimal Windows document reader with optional local OCR and AI translation",
   "license": "GPL-3.0-only",
