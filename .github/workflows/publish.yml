@@ -30,15 +30,17 @@ jobs:
       - name: Publish verified installer and portable package
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease --title "mitotoReader $GITHUB_REF_NAME" --notes-file docs/release-notes.md
-          gh api "repos/$GH_REPO/releases/tags/$GITHUB_REF_NAME" > release.json
+          gh api "repos/$GH_REPO/releases" > releases.json
           python3 - <<'PY'
-          import hashlib, json, pathlib
-          release = json.load(open('release.json'))
+          import hashlib, json, pathlib, os
+          release = next(r for r in json.load(open('releases.json')) if r['tag_name'] == os.environ['GITHUB_REF_NAME'])
           files = list(pathlib.Path('release-assets').iterdir())
           assert len(release['assets']) == len(files) == 4
           for file in files:
               asset = next(a for a in release['assets'] if a['name'] == file.name)
               assert asset['size'] == file.stat().st_size
               assert asset['digest'] == 'sha256:' + hashlib.sha256(file.read_bytes()).hexdigest()
+          pathlib.Path('release-id.txt').write_text(str(release['id']))
           PY
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          RELEASE_ID=$(cat release-id.txt)
+          gh api --method PATCH "repos/$GH_REPO/releases/$RELEASE_ID" -F draft=false > /dev/null
