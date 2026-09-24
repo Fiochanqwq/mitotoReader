@@ -1,0 +1,44 @@
+name: Windows alpha validation
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: bun cmd/build.ts --package
+      - run: node --test tests/startup.test.cjs tests/runtime.test.cjs
+      - run: ./tests/generate-reader-fixtures.ps1
+      - name: Test packaged reader
+        shell: pwsh
+        run: |
+          $env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.1.0-alpha.1-win32-x64/mitotoReader.exe').Path
+          node tests/smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/ocr-languages.mjs
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: mitotoReader-0.1.0-alpha.1-win32-x64
+          path: release/mitotoReader-0.1.0-alpha.1-win32-x64/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            tests/tmp/ocr-language-results-*.json
+            tests/tmp/*/startup-error.log

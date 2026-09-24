@@ -1,0 +1,32 @@
+{
+  "name": "mitotoreader",
+  "productName": "mitotoReader",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "A minimal offline reader for Windows",
+  "license": "GPL-3.0-only",
+  "main": "app/main.cjs",
+  "scripts": {
+    "build": "bun cmd/build.ts",
+    "start": "electron .",
+    "test": "node tests/smoke.mjs",
+    "package": "bun cmd/build.ts --package"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12"
+  },
+  "dependencies": {
+    "@readium/css": "2.0.5",
+    "epubjs": "0.3.93",
+    "pdfjs-dist": "6.3.289",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.4.5",
+    "esbuild": "0.28.2",
+    "pdf-lib": "1.17.1",
+    "playwright-core": "1.63.0",
+    "prettier": "3.9.9"
+  }
+}

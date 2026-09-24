@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; font-src 'self' blob: data:; connect-src 'self' blob:; frame-src blob:; object-src 'none'; form-action 'none'"
+    />
+    <title>mitotoReader</title>
+    <link rel="stylesheet" href="./main.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="home-button" class="brand" aria-label="返回首页">
+        <span class="mark">m.</span><span>mitoto<span class="muted">Reader</span></span>
+      </button>
+      <div id="document-title" class="document-title">你的下一页，从这里开始。</div>
+      <button id="theme" class="quiet" aria-label="切换深浅色主题">◐</button>
+      <button id="open" class="primary">打开文件 <span>＋</span></button>
+    </header>
+    <main id="home" class="home">
+      <div class="eyebrow">A LITTLE SPACE TO READ</div>
+      <h1>留一点时间，<br /><span class="muted">给下一页。</span></h1>
+      <p class="intro">文字、故事与新的发现。<br />在自己的节奏里，安静地读下去。</p>
+      <button id="home-open" class="primary large">打开一本书 <span>↗</span></button>
+      <div class="formats">PDF · EPUB · PNG · JPEG</div>
+      <section class="recent-section" aria-labelledby="recent-title">
+        <div class="section-heading">
+          <h2 id="recent-title">继续阅读</h2>
+          <span class="muted">最近打开</span>
+        </div>
+        <div id="recent" class="recent"></div>
+      </section>
+      <div class="home-note"><span class="dot"></span> 本地阅读 · 离线识别 <span class="version">ALPHA 0.1</span></div>
+    </main>
+    <section id="reader" hidden aria-label="阅读器">
+      <nav class="reader-tools" aria-label="阅读工具">
+        <button id="toc-toggle" class="quiet">☰ <span>目录</span></button>
+        <div class="tools-spacer"></div>
+        <div id="zoom-tools">
+          <button id="zoom-out" aria-label="缩小">−</button><span id="zoom-label">100%</span
+          ><button id="zoom-in" aria-label="放大">＋</button>
+        </div>
+        <button id="type-toggle" class="quiet">Aa <span>排版</span></button>
+        <button id="ocr-toggle" class="quiet">▣ <span>文字识别</span></button>
+        <button id="focus-toggle" class="quiet" aria-label="收起阅读工具">⌃</button>
+      </nav>
+      <button id="restore-tools" hidden>显示工具栏</button>
+      <div class="reading-layout">
+        <aside id="toc-panel" class="panel left-panel" hidden>
+          <div class="panel-heading">
+            <h2>目录</h2>
+            <button data-close="toc-panel" aria-label="关闭目录">×</button>
+          </div>
+          <div id="toc"></div>
+        </aside>
+        <div id="reading-stage"><div id="viewport"></div></div>
+        <aside id="type-panel" class="panel" hidden>
+          <div class="panel-heading">
+            <h2>阅读排版</h2>
+            <button data-close="type-panel" aria-label="关闭排版">×</button>
+          </div>
+          <p class="muted small">为这本书，找到舒服的节奏。</p>
+          <label
+            >文字方向<select id="writing-mode">
+              <option value="publisher">跟随原书</option>
+              <option value="horizontal">横排</option>
+              <option value="vertical">竖排</option>
+            </select></label
+          >
+          <label
+            >阅读字体<select id="font-family">
+              <option value="'Yu Mincho', 'SimSun', serif">明朝 / 宋体</option>
+              <option value="'Microsoft YaHei', 'Yu Gothic', sans-serif">黑体 / 无衬线</option>
+              <option value="Georgia, 'Yu Mincho', 'SimSun', serif">Georgia / 衬线</option>
+            </select></label
+          >
+          <label
+            >字号 <output id="font-value">110%</output
+            ><input id="font-size" type="range" min="80" max="180" value="110" step="5"
+          /></label>
+          <label
+            >行距 <output id="line-value">1.8</output
+            ><input id="line-spacing" type="range" min="1.2" max="2.4" step="0.1" value="1.8"
+          /></label>
+          <label
+            >页边距 <output id="margin-value">32 px</output
+            ><input id="page-margin" type="range" min="12" max="80" step="4" value="32"
+          /></label>
+          <p class="small muted">设置随书保存。PDF 与图片保留原始排版。</p>
+        </aside>
+        <aside id="ocr-panel" class="panel" hidden>
+          <div class="panel-heading">
+            <h2>文字识别</h2>
+            <button data-close="ocr-panel" aria-label="关闭识别面板">×</button>
+          </div>
+          <p class="muted small">当前页 · 在本机离线处理</p>
+          <label
+            >识别语言<select id="ocr-language">
+              <option value="chi_sim+eng">简体中文 + English</option>
+              <option value="chi_tra+eng">繁體中文 + English</option>
+              <option value="eng">English</option>
+              <option value="jpn">日本語 · 横排</option>
+              <option value="jpn_vert">日本語 · 竖排</option>
+            </select></label
+          >
+          <label
+            >文字布局<select id="ocr-layout">
+              <option value="3">自动分析页面</option>
+              <option value="6">连续文字块</option>
+              <option value="7">单行文字</option>
+            </select></label
+          >
+          <div class="button-row">
+            <button id="ocr-start" class="primary">识别当前页</button><button id="ocr-cancel" hidden>取消</button>
+          </div>
+          <progress id="ocr-progress" value="0" max="1" hidden></progress>
+          <div id="ocr-status" class="small muted" role="status">选择语言后开始识别。</div>
+          <textarea id="ocr-result" aria-label="识别文字，可编辑" placeholder="识别的文字会显示在这里。"></textarea>
+          <div class="button-row">
+            <button id="ocr-copy">复制文字</button><button id="ocr-export">导出 TXT ↗</button>
+          </div>
+        </aside>
+      </div>
+      <footer class="reading-footer">
+        <span id="kind-label" class="eyebrow"></span>
+        <div class="page-navigation">
+          <button id="previous" aria-label="上一页">←</button
+          ><label
+            ><input id="page-number" type="number" min="1" value="1" aria-label="页码" /><span
+              id="page-total"
+            ></span></label
+          ><button id="next" aria-label="下一页">→</button>
+        </div>
+        <span id="reading-status" class="muted small">本地阅读</span>
+      </footer>
+    </section>
+    <div id="message" role="status" hidden></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
