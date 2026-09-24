@@ -57,7 +57,7 @@ export function ocrController({ host, document: getDocument, pdf: getPdf, page: 
   }
   function selectCrop() {
     clearCrop();
-    const viewport = $("viewport");
+    const viewport = $("viewport").querySelector(`.pdf-page[data-page="${getPage()}"]`) || $("viewport");
     if (!viewport.querySelector("canvas, img")) return;
     overlay = document.createElement("div");
     overlay.className = "crop-overlay";
@@ -208,6 +208,9 @@ export function ocrController({ host, document: getDocument, pdf: getPdf, page: 
     if (busy || !getDocument()) return;
     const document = getDocument(),
       ticket = ++token;
+    const input = $("ocr-input").value;
+    if ((input === "pdf" && document.kind !== "pdf") || (input === "image" && !["png", "jpg", "jpeg"].includes(document.kind)) || input === "office")
+      throw new Error("当前文件与指定输入类型不匹配；轻量 OCR 支持 PDF 与 PNG / JPEG，请调整工作台输入类型。");
     const pages =
       allPages && getPdf()
         ? Array.from({ length: getPdf().numPages }, (_, index) => index + 1)

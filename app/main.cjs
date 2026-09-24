@@ -11,6 +11,7 @@ const { engineManager } = require("./engines.cjs");
 const origin = "mitoto://app";
 const testMode = process.env.MITOTO_TEST_MODE === "1";
 let win;
+const aiRequests = new Map();
 let state = migrate();
 let writes = Promise.resolve();
 let persistTimer,
@@ -224,13 +225,23 @@ app
       if (!state.library.some((entry) => entry.id === id)) throw new Error("文档不存在。");
       if (!input || typeof input !== "object") throw new Error("翻译请求无效。");
       validateProvider(input.provider);
-      const key = await secrets.get(input.provider);
-      if (!key) throw new Error("请先配置 API Key。");
-      return translateText({
+      if (typeof input.requestId !== "string" || input.requestId.length > 100) throw new Error("AI 请求标识无效。");
+      if (aiRequests.has(input.requestId)) throw new Error("AI 请求标识重复。");
+      if (aiRequests.size >= 2) throw new Error("请等待当前 AI 请求结束。");
+      const controller = new AbortController();
+      aiRequests.set(input.requestId, controller);
+      try {
+        const key = await secrets.get(input.provider);
+        if (controller.signal.aborted) throw new Error("已取消 AI 任务。");
+        if (!key) throw new Error("请先配置 API Key。");
+        return await translateText({
         provider: input.provider, key, region: state.providers[input.provider]?.region,
         model: state.providers[input.provider]?.model, text: input.text, target: input.target,
-      });
+        task: input.task, profile: input.profile, glossary: input.glossary, custom: input.custom,
+        before: input.before, after: input.after, previous: input.previous, signal: controller.signal,
+      }); } finally { aiRequests.delete(input.requestId); }
     });
+    handle("ai-cancel", (id) => { aiRequests.get(id)?.abort(); });
     handle("translation-load", async (id, provider, target) => {
       const file = await translationFile(id, provider, target);
       return fs.readFile(file, "utf8").then(JSON.parse).catch((error) => {
@@ -247,11 +258,11 @@ app
       await fs.rename(file + ".tmp", file);
     });
     handle("engine-installed", (engine) => engines.installed(engine));
-    handle("engine-install", (engine) => engines.install(engine));
-    handle("engine-parse", (id, engine) => {
+    handle("engine-install", (engine, options) => engines.install(engine, options));
+    handle("engine-parse", (id, engine, options) => {
       const entry = state.library.find((item) => item.id === id);
       if (!entry) throw new Error("文档不存在。");
-      return engines.parse(engine, entry.path);
+      return engines.parse(engine, entry.path, options);
     });
     handle("engine-status", (jobId) => engines.status(jobId));
     handle("engine-cancel", (jobId) => engines.cancel(jobId));

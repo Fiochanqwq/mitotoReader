@@ -12,6 +12,13 @@ const samples = [
   { lang: "chi_tra+eng", text: "離線閱讀 文字識別 測試成功", extension: "png" },
   { lang: "jpn", text: "日本語の文章を読みます", extension: "png" },
   { lang: "jpn_vert", text: "日本語の縦書き", extension: "png", vertical: true },
+  { lang: "kor+eng", text: "한국어 문서를 읽습니다", extension: "png" },
+  { lang: "deu+eng", text: "Die Wissenschaft erklärt unsere Welt", extension: "png" },
+  { lang: "fra+eng", text: "La lecture ouvre de nouvelles perspectives", extension: "png" },
+  { lang: "spa+eng", text: "La lectura mejora nuestra comprensión", extension: "png" },
+  { lang: "rus+eng", text: "Чтение открывает новые возможности", extension: "png" },
+  { lang: "ita+eng", text: "La lettura apre nuove prospettive", extension: "png" },
+  { lang: "por+eng", text: "A leitura abre novas oportunidades", extension: "png" },
 ];
 const browser = await chromium.launch({
   executablePath: process.env.EDGE_PATH || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",

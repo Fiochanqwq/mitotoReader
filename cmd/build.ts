@@ -9,7 +9,7 @@ const root = resolve(import.meta.dirname, "..");
 process.chdir(root);
 if (process.platform === "win32") prepareRuntime(resolve("node_modules/electron/dist"));
 const modelRevision = "87416418657359cb625c412a48b6e1d6d41c29bd";
-const models = ["eng", "chi_sim", "chi_tra", "jpn", "jpn_vert"];
+const models = ["eng", "chi_sim", "chi_tra", "jpn", "jpn_vert", "kor", "deu", "fra", "spa", "rus", "ita", "por"];
 const modelRoot = "resources/models";
 await mkdir(modelRoot, { recursive: true });
 const lockPath = "resources/models.lock.json";

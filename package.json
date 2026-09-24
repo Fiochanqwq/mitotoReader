@@ -1,7 +1,7 @@
 {
   "name": "mitotoreader",
   "productName": "mitotoReader",
-  "version": "0.2.0-alpha.2",
+  "version": "0.2.0-alpha.3",
   "private": true,
   "description": "A minimal Windows document reader with optional local OCR and AI translation",
   "license": "GPL-3.0-only",
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node cmd/build.ts",
     "start": "electron .",
-    "test": "node --test tests/startup.test.cjs tests/runtime.test.cjs tests/library.test.cjs tests/reader-utils.test.mjs tests/providers.test.cjs && node tests/smoke.mjs && node tests/features.mjs && node tests/long-epub.mjs",
+    "test": "node --test tests/startup.test.cjs tests/runtime.test.cjs tests/library.test.cjs tests/reader-utils.test.mjs tests/providers.test.cjs tests/ai.test.cjs && node tests/smoke.mjs && node tests/features.mjs && node tests/long-epub.mjs && node tests/workbench.mjs",
     "package": "node cmd/build.ts --package",
     "installer": "node cmd/installer.mjs"
   },

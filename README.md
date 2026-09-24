@@ -2,20 +2,28 @@
 
 独立的 Windows 文档阅读器。现代、极简、黑白灰界面；阅读和本地 OCR 可离线使用，用户主动配置的 AI 翻译需要联网。
 
-**0.2.0-alpha.2 是功能测试版。** 完整多格式阅读器仍在后续路线中。
+**0.2.0-alpha.3 是功能测试版。** 完整多格式阅读器仍在后续路线中。
 
 ![首页](docs/images/home.png)
 
 ## 测试版范围
 
-- PDF：翻页、缩放、页码跳转、文字选择与复制、目录。
+- PDF：单页 / 连续滚动、滚轮翻页、缩放、页码跳转、文字选择与复制、目录；连续模式按需绘制附近页面。
 - EPUB：目录、横排/竖排、ruby、字体/字号/行距/页边距、阅读位置和单书设置。
 - PNG/JPEG：查看、缩放。
-- 当前 PDF 页或图片：离线中/日/英 OCR、取消、可编辑结果、复制、导出 TXT。
+- 当前 PDF 页或图片：离线中 / 日 / 英 / 韩 / 德 / 法 / 西 / 俄 / 意 / 葡 OCR、取消、可编辑结果、复制、导出 TXT。
 - 最近阅读、深浅色主题、可收起的阅读工具和侧栏。
 - DOCX、PPTX、XLSX、ODT、ODP、ODS、TXT、MD、HTML、CSV、TSV、RTF：提取文字并按阅读页显示。Office 格式的图像、复杂表格和原版布局暂不还原。
 - `Ctrl+T` 打开浮动快捷工具，可高亮、批注、框选 OCR 或翻译选中文字；再次按下关闭。
-- 独立工作台提供 Docling 快速 OCR 和 MinerU 高精度 OCR 的本地安装与整份文档解析，以及六家服务商的基础翻译。
+- 独立工作台提供 Docling / MinerU 的本地安装与整份文档解析，以及六家服务商的 AI 翻译、OCR 文本校正与结构整理。
+
+## AI 助手与识别方案
+
+内置个人阅读、Nature / Science 类论文、IEEE / ACM 类论文、医学论文、书籍、扫描档案方案。「高级」可编辑文档特征、输入文件类型、结果排版、术语表和补充要求，并在当前文档保存自定义方案。期刊方案是阅读偏好，不是官方投稿模板。
+
+AI 使用独立的翻译 / 校正 / 整理提示词，约束数字、公式、引用、证据强度及不确定内容。按段落分段并携带有限上下文，逐段保存，支持取消与续跑；模型输出截断时不保存为完成结果，数字或公式等变化会提示核对。OCR 校正处理已提取文字，不具备原图视觉核验能力。提示词策略、数据发送范围与测试边界见 [AI 助手说明](docs/AI-ASSISTANT.md)。
+
+解析引擎安装前会检查 Python 标准库，修复不完整的虚拟环境与 pip。Windows x64 无可用系统 Python 时，会下载校验过的官方 CPython 独立包到应用数据目录，不修改系统 Python；也可在高级设置指定 Python 路径。
 
 ## 本轮新增：阅读与书库
 
@@ -39,7 +47,7 @@
 
 ## Windows 下载
 
-前往 [GitHub Releases](https://github.com/Fiochanqwq/mitotoReader/releases/tag/v0.2.0-alpha.2)。推荐下载 `mitotoReader-0.2.0-alpha.2-Setup.exe`，双击安装后从桌面或开始菜单启动。无需安装开发环境；安装版阅读数据保存在 `%APPDATA%/mitotoreader/`，卸载时保留。
+前往 [GitHub Releases](https://github.com/Fiochanqwq/mitotoReader/releases/tag/v0.2.0-alpha.3)。推荐下载 `mitotoReader-0.2.0-alpha.3-Setup.exe`，双击安装后从桌面或开始菜单启动。无需安装开发环境；安装版阅读数据保存在 `%APPDATA%/mitotoreader/`，卸载时保留。
 
 也可选择便携 ZIP：
 
@@ -80,10 +88,10 @@ node cmd/build.ts --package
 npm run installer
 ```
 
-输出便携目录 `release/mitotoReader-0.2.0-alpha.2-win32-x64/`，以及 `release/installers/mitotoReader-0.2.0-alpha.2-Setup.exe`。打包后再次运行测试：
+输出便携目录 `release/mitotoReader-0.2.0-alpha.3-win32-x64/`，以及 `release/installers/mitotoReader-0.2.0-alpha.3-Setup.exe`。打包后再次运行测试：
 
 ```powershell
-$env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.2.0-alpha.2-win32-x64/mitotoReader.exe').Path
+$env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.2.0-alpha.3-win32-x64/mitotoReader.exe').Path
 npm test
 ```
 
@@ -93,7 +101,8 @@ npm test
 - OCR 支持当前页或指定页码批量识别，输入最大 400 万像素；识别结果须人工核对。小字可优先框选，但当前会先按页面预算栅格化，再裁剪。
 - 页面、连续文字块和单行文字可选择不同识别布局；日文竖排使用竖排布局。单行日文在自动页面分析下可能重复识别，建议选择“单行文字”。
 - Office 和 ODF 是文字阅读模式，暂不保留原版布局及嵌入媒体；复杂文件可能丢失部分结构。书库引用原文件，不复制保管文件，也尚无分组和标签。
-- Docling / MinerU 需要单独安装系统 Python，并在工作台首次启用时安装依赖；模型可能需要较大的下载和磁盘空间。AI 翻译只提供基础调用，长文按长度分段处理，尚无提示词优化、费用预估和自动重试。
+- Docling / MinerU 在首次启用时安装独立依赖；模型可能需要较大的下载和磁盘空间。自动 Python 下载需要访问 NuGet，依赖需要访问 PyPI，模型来源由引擎决定。高级路径可使用健康的 Python 3.10–3.14。
+- AI 需要自己的 API Key 和该账户可用的模型；配置中的模型 ID 可修改。真实模型输出仍需人工核对，当前不提供精确费用报价。整份文档提取可能不能完整恢复 PDF 的多栏顺序，复杂扫描论文应先用结构化解析再交给 AI。
 - 无 DRM 绕过、同步、朗读或 AI 问答。
 - 更多真实书籍、复杂 EPUB、Windows 10、无障碍和低配机器需要后续验证。
 

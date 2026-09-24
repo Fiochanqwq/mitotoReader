@@ -360,8 +360,7 @@ output {
     transform 150ms ease;
 }
 #viewport.page-changing {
-  opacity: 0.55;
-  transform: translateY(4px);
+  cursor: progress;
 }
 #viewport.epub {
   width: 100%;
@@ -373,6 +372,23 @@ output {
   background: white;
   box-shadow: 0 3px 20px #00000008;
 }
+#viewport.pdf-continuous { display: flex; flex-direction: column; gap: 20px; align-items: center; background: transparent; box-shadow: none; }
+.pdf-page { position: relative; flex-shrink: 0; background: white; box-shadow: 0 2px 12px #0002; overflow: hidden; }
+.pdf-page > canvas { display: block; }
+#reading-mode { max-width: 170px; }
+.advanced-settings { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.advanced-settings summary { cursor: pointer; font-weight: 600; }
+.advanced-settings textarea, .advanced-settings input:not([type="checkbox"]) { width: 100%; }
+.advanced-settings textarea, .advanced-settings input:not([type="checkbox"]) { padding: 10px; margin-top: 7px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+#engine-status { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+#translation-results:empty::before { content: "选择处理任务与范围后开始。结果会逐段保存在这里。"; display: block; color: var(--muted); padding: 30px 0; }
+.quality-warning { padding: 10px 12px; border-left: 3px solid #b68525; background: #ba882512; font-size: 12px; }
+.workbench-intro, .workbench-output { min-width: 0; }
+.workbench-output textarea { line-height: 1.8; resize: vertical; }
+#ai-task-hint, #translate-status { line-height: 1.8; overflow-wrap: anywhere; }
+#message { transition: opacity 180ms ease; }
+@media (max-width: 1100px) { .reader-tools { flex-wrap: wrap; height: auto; } #reading-mode { max-width: 145px; } }
+@media (prefers-reduced-motion: reduce) { #message, #viewport { transition: none; } }
 #viewport > canvas {
   display: block;
 }

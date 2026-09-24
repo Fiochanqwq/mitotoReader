@@ -5,6 +5,7 @@ import { libraryView } from "./library.js";
 import { ocrController } from "./ocr.js";
 import { parseDocument } from "./document-formats.js";
 import { workbenchController } from "./workbench.js";
+import { continuousPdf } from "./continuous-pdf.js";
 import { fitScale, rasterScale, snippets } from "./reader-utils.mjs";
 import horizontalCss from "@readium/css/css/dist/cjk-horizontal/ReadiumCSS-after.css";
 import verticalCss from "@readium/css/css/dist/cjk-vertical/ReadiumCSS-after.css";
@@ -46,6 +47,18 @@ const workbench = workbenchController({
   host, current: () => current, pdf: () => pdf, book: () => book,
   pages: () => parsedPages, pageNumber: () => pageNumber,
   selectedText: () => selectedText || window.getSelection()?.toString().trim() || "", message,
+  readSettings: () => settings.workbench,
+  writeSettings: value => { settings.workbench = value; save(); },
+});
+const continuous = continuousPdf({ stage: $("reading-stage"), viewport: $("viewport"), message,
+  changed: value => {
+    pageNumber = value; settings.page = value; settings.progress = value / pdf.numPages;
+    updatePages(pdf.numPages); drawBookmarks(); drawAnnotations(); ocr.clearCrop(); save();
+  }, decorated: () => {
+    if (searchHighlight) for (const span of $("viewport").querySelectorAll(".textLayer span"))
+      span.classList.toggle("search-hit", span.textContent.toLocaleLowerCase().includes(searchHighlight.toLocaleLowerCase()));
+    drawAnnotations();
+  },
 });
 let rendering = Promise.resolve();
 let settings = {};
@@ -54,9 +67,11 @@ const defaults = { mode: "publisher", font: "'Yu Mincho', 'SimSun', serif", size
 function message(text) {
   $("message").textContent = text;
   $("message").hidden = false;
+  $("message").style.opacity = "1";
   clearTimeout(messageTimer);
   messageTimer = setTimeout(() => {
-    $("message").hidden = true;
+    $("message").style.opacity = "0";
+    messageTimer = setTimeout(() => { $("message").hidden = true; }, 200);
   }, 6000);
 }
 function safe(action) {
@@ -77,6 +92,7 @@ async function showRecent() {
   await library.refresh();
 }
 async function dispose() {
+  continuous.destroy();
   generation++;
   documentToken++;
   searchToken++;
@@ -120,6 +136,9 @@ async function loadDocument(doc) {
   settings.bookmarks = Array.isArray(settings.bookmarks) ? settings.bookmarks : [];
   settings.annotations = Array.isArray(settings.annotations) ? settings.annotations : [];
   $("fit-mode").value = settings.fit;
+  settings.readingMode = settings.readingMode === "continuous" ? "continuous" : "paged";
+  $("reading-mode").value = settings.readingMode;
+  $("reading-mode").hidden = doc.kind !== "pdf";
   $("search-toggle").disabled = false;
   $("ocr-pages-label").hidden = doc.kind !== "pdf";
   $("search-status").textContent = "搜索可读取的文档文字；扫描页请使用 OCR。";
@@ -189,6 +208,7 @@ async function loadPdf(bytes) {
   await renderPdf();
 }
 function renderPdf(preserveScroll = false) {
+  const requestedPage = pageNumber;
   renderTask?.cancel();
   textLayer?.cancel();
   const token = ++generation;
@@ -196,6 +216,7 @@ function renderPdf(preserveScroll = false) {
     .catch(() => {})
     .then(async () => {
       if (!pdf || token !== generation) return;
+      pageNumber = requestedPage;
       const page = await pdf.getPage(pageNumber);
       if (token !== generation) return;
       const stage = $("reading-stage");
@@ -207,6 +228,13 @@ function renderPdf(preserveScroll = false) {
         zoom = fitScale(base.width, base.height, stage.clientWidth - 48, stage.clientHeight - 48, settings.fit);
       const viewport = page.getViewport({ scale: zoom });
       ocr.clearCrop();
+      if (settings.readingMode === "continuous") {
+        await continuous.show(pdf, zoom, pageNumber, preserveScroll);
+        if (token !== generation) return;
+        settings.page = pageNumber; settings.zoom = zoom; settings.progress = pageNumber / pdf.numPages;
+        updatePages(pdf.numPages); drawBookmarks(); drawAnnotations(); save(); return;
+      }
+      continuous.destroy();
       const canvas = document.createElement("canvas");
       const ratio = rasterScale(viewport.width, viewport.height, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
@@ -328,7 +356,7 @@ function renderStructured() {
   $("reading-stage").scrollTo(0, 0);
 }
 function updatePages(total) {
-  $("page-number").value = String(pageNumber);
+  if (document.activeElement !== $("page-number")) $("page-number").value = String(pageNumber);
   $("page-number").max = String(total);
   $("page-total").textContent = `/ ${total}`;
   $("zoom-label").textContent = `${Math.round(zoom * 100)}%`;
@@ -379,6 +407,7 @@ async function loadEpub(bytes) {
   rendition.themes.registerCss("vertical", verticalCss);
   rendition.hooks.content.register((contents) => {
     contents.document.addEventListener("keydown", (event) => onKeydown(event).catch((error) => message(error.message)));
+    contents.document.addEventListener("wheel", onReaderWheel, { passive: false });
     contents.document.addEventListener("mouseup", () => {
       const selection = contents.document.getSelection();
       if (!selection?.rangeCount || !selection.toString().trim()) return;
@@ -624,9 +653,16 @@ function drawBookmarks() {
 }
 function captureSelection(selection, cfi = null) {
   const value = selection?.toString().trim();
-  if (!value || value.length > 3000) return;
+  if (!value) return;
+  selectedText = value;
+  currentSelection = null;
+  if (value.length > 3000) return;
   const range = selection.getRangeAt(0);
-  const bounds = $("viewport").getBoundingClientRect();
+  const anchor = selection.anchorNode?.parentElement?.closest(".pdf-page");
+  const focus = selection.focusNode?.parentElement?.closest(".pdf-page");
+  if (anchor && focus !== anchor) return;
+  const selectionPage = anchor ? Number(anchor.dataset.page) : pageNumber;
+  const bounds = (anchor || $("viewport")).getBoundingClientRect();
   const rects = cfi ? [] : [...range.getClientRects()]
     .filter((rect) => rect.width > 1 && rect.height > 1)
     .slice(0, 100)
@@ -639,7 +675,7 @@ function captureSelection(selection, cfi = null) {
     .filter((rect) => rect.x >= -0.01 && rect.y >= -0.01 && rect.x + rect.w <= 1.01 && rect.y + rect.h <= 1.01);
   if (!cfi && !rects.length) return;
   selectedText = value;
-  currentSelection = { quote: value.slice(0, 1000), page: pageNumber, cfi, rects };
+  currentSelection = { quote: value.slice(0, 1000), page: selectionPage, cfi, rects };
 }
 document.addEventListener("mouseup", () => {
   if (!current || rendition) return;
@@ -647,12 +683,14 @@ document.addEventListener("mouseup", () => {
   if (selection?.rangeCount && $("viewport").contains(selection.anchorNode)) captureSelection(selection);
 });
 function drawAnnotations() {
-  $("viewport").querySelector(".annotation-overlay")?.remove();
+  $("viewport").querySelectorAll(".annotation-overlay").forEach(node => node.remove());
   if (!rendition) {
-    const overlay = document.createElement("div");
-    overlay.className = "annotation-overlay";
+    const overlays = new Map();
     for (const mark of settings.annotations || []) {
-      if (mark.page !== pageNumber) continue;
+      const parent = settings.readingMode === "continuous" && pdf ? $("viewport").querySelector(`.pdf-page[data-page="${mark.page}"]`) : mark.page === pageNumber ? $("viewport") : null;
+      if (!parent || (settings.readingMode === "continuous" && pdf && !parent.querySelector("canvas"))) continue;
+      let overlay = overlays.get(parent);
+      if (!overlay) { overlay = document.createElement("div"); overlay.className = "annotation-overlay"; parent.append(overlay); overlays.set(parent, overlay); }
       for (const rect of mark.rects || []) {
         const box = document.createElement("div");
         box.className = "annotation-highlight";
@@ -664,7 +702,6 @@ function drawAnnotations() {
         overlay.append(box);
       }
     }
-    $("viewport").append(overlay);
   }
   const list = $("annotations-list");
   list.replaceChildren();
@@ -854,6 +891,8 @@ $("quick-ocr-close").onclick = () => { $("quick-ocr-result").hidden = true; ocr.
 $("quick-translate").onclick = () => {
   if (!selectedText) return message("请先选中文字。");
   enterWorkbench("translate");
+  $("ai-task").value = "translate";
+  $("ai-task").dispatchEvent(new Event("change"));
   $("translate-scope").value = "selection";
 };
 $("tools-toggle").onclick = () =>
@@ -905,6 +944,7 @@ $("page-number").onchange = safe(async () => {
   if (pdf) await renderPdf();
   else renderStructured();
 });
+$("page-number").addEventListener("keydown", event => { if (event.key === "Enter") event.currentTarget.blur(); });
 $("zoom-out").onclick = safe(() => changeZoom(-0.1));
 $("zoom-in").onclick = safe(() => changeZoom(0.1));
 for (const [id, key, numeric] of [
@@ -997,18 +1037,37 @@ async function onKeydown(event) {
   }
 }
 document.addEventListener("keydown", (event) => onKeydown(event).catch((error) => message(error.message)));
-$("reading-stage").addEventListener(
-  "wheel",
-  (event) => {
-    if (!event.ctrlKey || !current || rendition) return;
+$("reading-mode").onchange = safe(async () => {
+  settings.readingMode = $("reading-mode").value;
+  if (settings.readingMode === "continuous") { settings.fit = "width"; $("fit-mode").value = "width"; }
+  if (pdf) await renderPdf(); save();
+});
+let lastWheelTurn = 0, wheelAmount = 0, wheelAt = 0;
+function onReaderWheel(event) {
+    if (!current || !$("workbench").hidden) return;
+    if (!event.ctrlKey) {
+      if (pdf && settings.readingMode === "continuous") return;
+      if ((!pdf && !parsedPages && !rendition) || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const stage = $("reading-stage"), down = event.deltaY > 0;
+      const edge = down ? stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 2 : stage.scrollTop <= 2;
+      if (!edge) { wheelAmount = 0; return; }
+      event.preventDefault();
+      const now = performance.now();
+      if (now - wheelAt > 200 || Math.sign(wheelAmount) !== Math.sign(event.deltaY)) wheelAmount = 0;
+      wheelAt = now; wheelAmount += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientHeight : 1);
+      if (now - lastWheelTurn < 450 || Math.abs(wheelAmount) < 60) return;
+      lastWheelTurn = now; wheelAmount = 0;
+      void turn(down ? 1 : -1).then(() => { if (!down) stage.scrollTop = stage.scrollHeight; }).catch(error => message(error.message));
+      return;
+    }
+    if (rendition) return;
     event.preventDefault();
     if (!event.deltaY) return;
     void changeZoom(event.deltaY < 0 ? 0.1 : -0.1, { x: event.clientX, y: event.clientY }).catch((error) =>
       message(error.message),
     );
-  },
-  { passive: false },
-);
+}
+$("reading-stage").addEventListener("wheel", onReaderWheel, { passive: false });
 
 window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();

@@ -64,6 +64,7 @@
           ☆
         </button>
         <div class="tools-spacer"></div>
+        <select id="reading-mode" aria-label="阅读模式"><option value="paged">单页 · 滚轮翻页</option><option value="continuous">连续向下滚动</option></select>
         <div id="zoom-tools">
           <button id="zoom-out" aria-label="缩小">−</button><span id="zoom-label">100%</span
           ><button id="zoom-in" aria-label="放大">＋</button>
@@ -160,6 +161,13 @@
               <option value="eng">English</option>
               <option value="jpn">日本語 · 横排</option>
               <option value="jpn_vert">日本語 · 竖排</option>
+              <option value="kor+eng">한국어 · 韩语</option>
+              <option value="deu+eng">Deutsch · 德语</option>
+              <option value="fra+eng">Français · 法语</option>
+              <option value="spa+eng">Español · 西班牙语</option>
+              <option value="rus+eng">Русский · 俄语</option>
+              <option value="ita+eng">Italiano · 意大利语</option>
+              <option value="por+eng">Português · 葡萄牙语</option>
             </select></label
           >
           <label
@@ -249,35 +257,58 @@
       </header>
       <nav class="workbench-tabs" aria-label="工作台功能">
         <button id="workbench-ocr-tab" aria-current="page">文档识别</button>
-        <button id="workbench-translate-tab">翻译</button>
+        <button id="workbench-translate-tab">AI 助手</button>
         <button id="workbench-api-tab">模型服务</button>
       </nav>
       <div id="workbench-ocr-view" class="workbench-layout">
         <div class="workbench-intro">
           <h2>文档识别</h2>
+          <label>格式方案<select id="ocr-preset"></select></label>
+          <label>输入文件类型<select id="ocr-input"><option value="auto">自动 · 当前文档</option><option value="pdf">PDF 文档</option><option value="image">PNG / JPEG 图片</option><option value="office">Office · DOCX / PPTX / XLSX</option></select></label>
+          <details class="advanced-settings"><summary>高级 · 编辑方案与安装设置</summary>
+            <label>文档特征<textarea id="profile-genre" maxlength="500" rows="3"></textarea></label>
+            <label>文字版式<select id="profile-layout"><option value="auto">自动分析</option><option value="single">单栏连续文字</option><option value="columns">多栏论文</option></select></label>
+            <label>AI 结果排版<select id="profile-output"><option value="markdown">Markdown · 保留结构</option><option value="text">纯文本 · 便于阅读</option></select></label>
+            <label class="check-label"><input id="profile-force" type="checkbox" />Docling 强制识别扫描页</label>
+            <p class="small muted">语言与文字版式用于右侧轻量 OCR；Docling / MinerU 自行分析版面与语言。文档特征和结果排版用于 AI 助手。期刊方案为阅读偏好，并非官方投稿模板。</p>
+            <label>自定义方案名称<input id="profile-name" maxlength="40" placeholder="例如：我的论文精读" /></label>
+            <div class="button-row"><button id="profile-save">保存方案</button><button id="profile-delete">删除方案</button></div>
+            <label>Python 路径（可选）<input id="engine-python" placeholder="留空自动检测；不可用时下载独立 Python" /></label>
+            <p class="small muted">仅在安装解析组件时下载 Python 与依赖；独立环境保存在应用数据目录。</p>
+          </details>
           <p>选择快速或高精度解析；轻量识别仍可用于单页和框选。</p>
           <div class="ocr-modes">
             <button id="ocr-fast" class="mode-card"><strong>快速 OCR</strong><span>Docling · 结构化提取</span></button>
             <button id="ocr-accurate" class="mode-card"><strong>高精度 OCR</strong><span>MinerU · 复杂版面</span></button>
           </div>
-          <p id="engine-status" class="muted small"></p>
+          <p id="engine-status" class="muted small" role="status"></p>
           <div class="button-row"><button id="engine-action" hidden class="primary">开始解析</button><button id="engine-cancel" hidden>取消</button></div>
           <button id="ocr-all" class="primary">轻量识别整份 PDF</button>
           <p id="workbench-hint" class="muted small">单页与自选页码也可在右侧操作。</p>
+          <button id="ocr-ai">用 AI 校正识别结果 →</button>
         </div>
         <div id="workbench-slot"><div id="engine-output" class="workbench-output" hidden><h2>解析结果</h2><textarea id="engine-result" aria-label="文档解析结果，可编辑"></textarea><div class="button-row"><button id="engine-copy">复制</button><button id="engine-export">导出 TXT</button></div></div></div>
       </div>
       <div id="workbench-translate-view" class="workbench-layout" hidden>
         <div class="workbench-intro">
-          <h2>翻译任务</h2>
-          <label>范围<select id="translate-scope"><option value="selection">选中内容</option><option value="page">当前页</option><option value="document">整份文档</option><option value="ocr">识别结果</option></select></label>
-          <label>目标语言<select id="translate-target"><option value="简体中文">简体中文</option><option value="English">English</option><option value="日本語">日本語</option><option value="繁體中文">繁體中文</option></select></label>
+          <h2>AI 文档助手</h2>
+          <label>处理任务<select id="ai-task"><option value="translate">忠实翻译</option><option value="correct">OCR 校正 · 保持原语言</option><option value="structure">结构整理 · 保持原语言</option></select></label>
+          <p id="ai-task-hint" class="small muted">保留术语、证据强度、公式与引文；不总结、不补写。</p>
+          <label>范围<select id="translate-scope"><option value="selection">选中内容</option><option value="page">当前页</option><option value="document">整份文档</option><option value="ocr">轻量 OCR 结果</option><option value="parser">Docling / MinerU 解析结果</option></select></label>
+          <label>目标语言<select id="translate-target"><option value="简体中文">简体中文</option><option value="English">English</option><option value="日本語">日本語</option><option value="繁體中文">繁體中文</option><option value="한국어">한국어</option><option value="Deutsch">Deutsch</option><option value="Français">Français</option><option value="Español">Español</option><option value="Русский">Русский</option><option value="Italiano">Italiano</option><option value="Português">Português</option></select></label>
           <label>模型服务<select id="translate-provider"></select></label>
+          <details class="advanced-settings"><summary>高级 · 术语与处理偏好</summary>
+            <label>术语表<textarea id="ai-glossary" maxlength="4000" rows="4" placeholder="每行一项，例如：attention = 注意力"></textarea></label>
+            <label>补充要求<textarea id="ai-custom" maxlength="2000" rows="3" placeholder="例如：保留原文小标题；专名首次出现时附原文"></textarea></label>
+            <label>每段文字上限<select id="ai-chunk-size"><option value="3000">3000 · 复杂公式 / 较小模型</option><option value="6000" selected>6000 · 均衡</option><option value="9000">9000 · 较少请求</option></select></label>
+            <p class="small muted">内置提示词会约束遗漏、补造、数字与公式变化。OCR 校正仅看到提取的文字，不具备原图核验能力。</p>
+          </details>
+          <p class="small muted">点击开始后，所选文字、少量上下文、术语表与偏好会发送到所选服务商，按其规则计费。完成的分段自动保存，重试可续跑。</p>
           <button id="translate-start" class="primary">开始翻译</button><button id="translate-cancel" hidden>取消任务</button>
           <p id="translate-status" class="muted small" role="status">先在“模型服务”填写 API Key。</p>
           <progress id="translate-progress" value="0" max="1" hidden></progress>
         </div>
-        <div class="workbench-output"><h2>原文与译文</h2><div id="translation-results"></div><div class="button-row"><button id="translation-copy">复制译文</button><button id="translation-export">导出 TXT</button></div></div>
+        <div class="workbench-output"><h2>原文与处理结果</h2><p class="small muted">结果可编辑；数字、公式等变化会显示核对提示，提示不代表自动判定正误。</p><div id="translation-results"></div><div class="button-row"><button id="translation-copy">复制结果</button><button id="translation-export">导出结果 TXT</button></div></div>
       </div>
       <div id="workbench-api-view" class="workbench-layout" hidden>
         <div class="workbench-intro"><h2>模型服务</h2><p>选择服务商，只需粘贴官方 API Key。模型与接口已预设。</p><div id="provider-cards"></div></div>
