@@ -17,30 +17,56 @@
       </button>
       <div id="document-title" class="document-title">你的下一页，从这里开始。</div>
       <button id="theme" class="quiet" aria-label="切换深浅色主题">◐</button>
+      <button id="fullscreen" class="quiet" title="全屏 / 退出全屏（F11）" aria-label="切换全屏">全屏</button>
       <button id="open" class="primary">打开文件 <span>＋</span></button>
     </header>
     <main id="home" class="home">
-      <div class="eyebrow">A LITTLE SPACE TO READ</div>
-      <h1>留一点时间，<br /><span class="muted">给下一页。</span></h1>
-      <p class="intro">文字、故事与新的发现。<br />在自己的节奏里，安静地读下去。</p>
+      <div class="eyebrow">YOUR LOCAL LIBRARY</div>
+      <h1>每一本书，<span class="muted">都有自己的位置。</span></h1>
+      <p class="intro">继续上次的故事，或开始新的发现。文件与阅读记录，只留在本机。</p>
       <button id="home-open" class="primary large">打开一本书 <span>↗</span></button>
       <div class="formats">PDF · EPUB · PNG · JPEG</div>
       <section class="recent-section" aria-labelledby="recent-title">
         <div class="section-heading">
-          <h2 id="recent-title">继续阅读</h2>
-          <span class="muted">最近打开</span>
+          <h2 id="recent-title">我的书库 <span id="library-count" class="muted small"></span></h2>
+          <button id="library-add">添加图书 ＋</button>
+        </div>
+        <div class="library-controls">
+          <input id="library-query" type="search" placeholder="搜索书名、作者或文件名" aria-label="搜索书库" />
+          <select id="library-filter" aria-label="筛选格式">
+            <option value="">全部格式</option>
+            <option value="epub">EPUB</option>
+            <option value="pdf">PDF</option>
+            <option value="image">图片</option>
+          </select>
+          <select id="library-sort" aria-label="书库排序">
+            <option value="recent">最近阅读 / 添加</option>
+            <option value="title">书名</option>
+            <option value="progress">阅读进度</option>
+          </select>
         </div>
         <div id="recent" class="recent"></div>
+        <button id="library-more" hidden>显示更多图书</button>
       </section>
-      <div class="home-note"><span class="dot"></span> 本地阅读 · 离线识别 <span class="version">ALPHA 0.1</span></div>
+      <div class="home-note"><span class="dot"></span> 本地阅读 · 离线识别 <span class="version">ALPHA 0.2</span></div>
     </main>
     <section id="reader" hidden aria-label="阅读器">
       <nav class="reader-tools" aria-label="阅读工具">
         <button id="toc-toggle" class="quiet">☰ <span>目录</span></button>
+        <button id="search-toggle" class="quiet" title="全文搜索（Ctrl+F）">搜索</button>
+        <button id="bookmarks-toggle" class="quiet" title="书签列表">书签</button>
+        <button id="bookmark-add" class="quiet" title="添加 / 移除书签（Ctrl+D）" aria-label="添加当前位置书签">
+          ☆
+        </button>
         <div class="tools-spacer"></div>
         <div id="zoom-tools">
           <button id="zoom-out" aria-label="缩小">−</button><span id="zoom-label">100%</span
           ><button id="zoom-in" aria-label="放大">＋</button>
+          <select id="fit-mode" aria-label="页面适配">
+            <option value="page">整页</option>
+            <option value="width">适应宽度</option>
+            <option value="manual">手动缩放</option>
+          </select>
         </div>
         <button id="type-toggle" class="quiet">Aa <span>排版</span></button>
         <button id="ocr-toggle" class="quiet">▣ <span>文字识别</span></button>
@@ -56,6 +82,28 @@
           <div id="toc"></div>
         </aside>
         <div id="reading-stage"><div id="viewport"></div></div>
+        <aside id="search-panel" class="panel" hidden>
+          <div class="panel-heading">
+            <h2>全文搜索</h2>
+            <button data-close="search-panel" aria-label="关闭搜索">×</button>
+          </div>
+          <form id="search-form">
+            <input id="search-query" type="search" placeholder="输入文字，按 Enter 搜索" aria-label="搜索文档文字" />
+            <div class="button-row">
+              <button type="submit">搜索</button><button id="search-cancel" type="button" hidden>停止</button>
+            </div>
+          </form>
+          <p id="search-status" class="small muted" role="status">搜索 PDF 文字层或 EPUB 正文；扫描页请使用 OCR。</p>
+          <div id="search-results" class="result-list"></div>
+        </aside>
+        <aside id="bookmarks-panel" class="panel" hidden>
+          <div class="panel-heading">
+            <h2>阅读书签</h2>
+            <button data-close="bookmarks-panel" aria-label="关闭书签">×</button>
+          </div>
+          <p class="small muted">按 Ctrl+D 保存或移除当前位置。</p>
+          <div id="bookmarks" class="result-list"></div>
+        </aside>
         <aside id="type-panel" class="panel" hidden>
           <div class="panel-heading">
             <h2>阅读排版</h2>
@@ -113,6 +161,23 @@
             </select></label
           >
           <div class="button-row">
+            <button id="ocr-region">框选区域</button><button id="ocr-region-clear" hidden>清除框选</button>
+          </div>
+          <p id="ocr-region-status" class="small muted">默认识别整页；框选后拖动页面上的矩形。</p>
+          <label
+            >识别前旋转<select id="ocr-rotation">
+              <option value="0">保持原向</option>
+              <option value="90">顺时针 90°</option>
+              <option value="180">旋转 180°</option>
+              <option value="270">逆时针 90°</option>
+            </select></label
+          >
+          <label class="check-label"><input id="ocr-contrast" type="checkbox" /> 增强黑白文字对比度</label>
+          <label id="ocr-pages-label"
+            >批量页码（留空为当前页）<input id="ocr-pages" placeholder="例如 1-5, 8（最多 100 页）"
+          /></label>
+          <p class="small muted">批量识别使用整页，逐页处理。相同设置优先读取本地缓存。</p>
+          <div class="button-row">
             <button id="ocr-start" class="primary">识别当前页</button><button id="ocr-cancel" hidden>取消</button>
           </div>
           <progress id="ocr-progress" value="0" max="1" hidden></progress>
@@ -134,9 +199,34 @@
           ><button id="next" aria-label="下一页">→</button>
         </div>
         <span id="reading-status" class="muted small">本地阅读</span>
+        <button id="shortcuts-toggle" class="quiet" title="查看快捷键">?</button>
       </footer>
     </section>
     <div id="message" role="status" hidden></div>
+    <dialog id="shortcuts">
+      <div class="panel-heading">
+        <h2>快捷键</h2>
+        <button id="shortcuts-close" aria-label="关闭快捷键">×</button>
+      </div>
+      <dl class="shortcuts-list">
+        <dt>Ctrl+O</dt>
+        <dd>打开文件</dd>
+        <dt>Ctrl+F</dt>
+        <dd>搜索当前文档</dd>
+        <dt>Ctrl+D</dt>
+        <dd>添加 / 移除书签</dd>
+        <dt>F11</dt>
+        <dd>进入 / 退出全屏</dd>
+        <dt>PageUp / PageDown</dt>
+        <dd>翻页</dd>
+        <dt>Ctrl+＋ / Ctrl+−</dt>
+        <dd>缩放 PDF 或图片</dd>
+        <dt>Ctrl+0</dt>
+        <dd>适应整页</dd>
+        <dt>Esc</dt>
+        <dd>关闭面板、取消框选或退出全屏</dd>
+      </dl>
+    </dialog>
     <script type="module" src="./main.js"></script>
   </body>
 </html>

@@ -1,64 +1,44 @@
-name: Publish validated alpha
+name: Release Windows reader
 on:
-  workflow_dispatch:
-    inputs:
-      validation_run:
-        description: Successful Windows validation run ID
-        required: true
-      commit:
-        description: Validated commit SHA
-        required: true
+  push:
+    tags: ["v*"]
 permissions:
-  contents: write
-  actions: read
+  contents: read
 jobs:
+  validate:
+    uses: ./.github/workflows/windows.yml
   publish:
+    needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      VALIDATION_RUN: ${{ inputs.validation_run }}
-      RELEASE_COMMIT: ${{ inputs.commit }}
-      PACKAGE: mitotoReader-0.1.0-alpha.1-win32-x64
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-      - name: Verify validation run
+          name: release-assets
+          path: release-assets
+      - name: Validate version and checksums
         run: |
-          gh api "repos/$GH_REPO/actions/runs/$VALIDATION_RUN" > run.json
+          VERSION=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$VERSION"
+          cd release-assets
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish verified installer and portable package
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease --title "mitotoReader $GITHUB_REF_NAME" --notes-file docs/release-notes.md
+          gh api "repos/$GH_REPO/releases/tags/$GITHUB_REF_NAME" > release.json
           python3 - <<'PY'
-          import json, os
-          run = json.load(open('run.json'))
-          assert run['conclusion'] == 'success'
-          assert run['head_sha'] == os.environ['RELEASE_COMMIT']
-          assert run['path'] == '.github/workflows/windows.yml'
-          PY
-      - name: Prepare release archives
-        run: |
-          gh run download "$VALIDATION_RUN" --name "$PACKAGE" --dir "staging/$PACKAGE"
-          mkdir -p release
-          cd staging
-          zip -q -r "../release/$PACKAGE.zip" "$PACKAGE"
-          cd ..
-          git archive --format=zip --output=release/mitotoReader-0.1.0-alpha.1-source.zip "$RELEASE_COMMIT"
-          cd release
-          sha256sum *.zip > SHA256SUMS.txt
-      - name: Upload and verify assets
-        run: |
-          gh release upload v0.1.0-alpha.1 release/*.zip release/SHA256SUMS.txt
-          gh api "repos/$GH_REPO/releases/395400063" > release.json
-          python3 - <<'PY'
-          import hashlib, json, pathlib, os
+          import hashlib, json, pathlib
           release = json.load(open('release.json'))
-          assert release['target_commitish'] == os.environ['RELEASE_COMMIT']
-          files = list(pathlib.Path('release').iterdir())
-          assert len(release['assets']) == len(files) == 3
+          files = list(pathlib.Path('release-assets').iterdir())
+          assert len(release['assets']) == len(files) == 4
           for file in files:
               asset = next(a for a in release['assets'] if a['name'] == file.name)
               assert asset['size'] == file.stat().st_size
               assert asset['digest'] == 'sha256:' + hashlib.sha256(file.read_bytes()).hexdigest()
-          notes = release['body'] + '\n\n发行文件来自已通过测试的 GitHub Windows 构建产物。[CI 记录](https://github.com/' + os.environ['GH_REPO'] + '/actions/runs/' + os.environ['VALIDATION_RUN'] + ')。'
-          pathlib.Path('release-notes.md').write_text(notes, encoding='utf-8')
           PY
-          gh release edit v0.1.0-alpha.1 --draft=false --notes-file release-notes.md
+          gh release edit "$GITHUB_REF_NAME" --draft=false

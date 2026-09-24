@@ -12,4 +12,11 @@ contextBridge.exposeInMainWorld("mitoto", {
   theme: (value) => call("theme", value),
   export: (text) => call("export", text),
   copy: (text) => call("copy", text),
+  fullscreen: (value) => call("fullscreen", value),
+  libraryAdd: () => call("library-add"),
+  libraryRemove: (id) => call("library-remove", id),
+  libraryRelink: (id) => call("library-relink", id),
+  metadata: (id, value) => call("metadata", id, value),
+  ocrCacheGet: (id, key) => call("ocr-cache-get", id, key),
+  ocrCacheSet: (id, key, text) => call("ocr-cache-set", id, key, text),
 });

@@ -66,8 +66,12 @@ try {
   await page.waitForFunction(() => document.querySelector(".textLayer")?.textContent.includes("ReaderTestToken"));
   await page.locator("#next").click();
   await page.waitForFunction(() => document.querySelector(".textLayer")?.textContent.includes("page 2"));
+  const beforeZoom = parseInt(await page.locator("#zoom-label").textContent());
   await page.locator("#zoom-in").click();
-  await page.waitForFunction(() => document.getElementById("zoom-label").textContent === "110%");
+  await page.waitForFunction(
+    (before) => parseInt(document.getElementById("zoom-label").textContent) > before,
+    beforeZoom,
+  );
   const selection = await page.evaluate(() => {
     const range = document.createRange();
     range.selectNodeContents(document.querySelector(".textLayer"));
@@ -113,8 +117,43 @@ try {
   assert.equal((await readFile(exported, "utf8")).replace(/^\ufeff/, ""), recognized);
   await screenshot("pdf-ocr.png");
   await page.locator("#ocr-start").click();
+  await page.waitForFunction(() => document.getElementById("ocr-status").textContent.includes("来自缓存"));
+  assert.equal(await page.locator("#ocr-result").inputValue(), recognized);
+  await page.locator("#ocr-pages").fill("1-2");
+  await page.locator("#ocr-start").click();
+  await page.waitForFunction(
+    () => document.getElementById("ocr-status").textContent.startsWith("已完成 · 2 页"),
+    null,
+    { timeout: 120000 },
+  );
+  const batch = await page.locator("#ocr-result").inputValue();
+  assert.match(batch, /第 1 页/);
+  assert.match(batch, /第 2 页/);
+  assert.match(batch, /page 1/);
+  assert.match(batch, /page 2/);
+  await page.locator("#ocr-pages").fill("");
+  await page.locator("#ocr-region").click();
+  const region = await page.locator(".crop-overlay").boundingBox();
+  await page.mouse.move(region.x + region.width * 0.05, region.y + region.height * 0.06);
+  await page.mouse.down();
+  await page.mouse.move(region.x + region.width * 0.95, region.y + region.height * 0.22);
+  await page.mouse.up();
+  await page.locator("#ocr-start").click();
+  await page.waitForFunction(() => document.getElementById("ocr-status").textContent.startsWith("已完成"), null, {
+    timeout: 120000,
+  });
+  assert.match(await page.locator("#ocr-result").inputValue(), /A little space to read/);
+  assert.doesNotMatch(await page.locator("#ocr-result").inputValue(), /Your documents stay with you/);
+  await page.locator("#ocr-region-clear").click();
+  await page.locator("#ocr-rotation").selectOption("180");
+  await page.locator("#ocr-start").click();
   await page.locator("#ocr-cancel").click();
-  assert.equal(await page.locator("#ocr-status").textContent(), "已取消识别。");
+  await page.waitForFunction(() => document.getElementById("ocr-status").textContent.startsWith("已取消识别"));
+  await page.locator("#ocr-rotation").selectOption("90");
+  await page.locator("#ocr-start").click();
+  await page.locator("#home-button").click();
+  await page.waitForFunction(() => !document.getElementById("home").hidden);
+  await page.waitForFunction(() => document.getElementById("ocr-result").value === "");
   await page.locator("#theme").click();
   await close();
   await launch(fixture);

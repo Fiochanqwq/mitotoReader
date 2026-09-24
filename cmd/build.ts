@@ -105,8 +105,8 @@ if (process.argv.includes("--package")) {
   const { resedit } = await import("@electron/packager/resedit");
   await resedit(join(output, "mitotoReader.exe"), {
     iconPath: resolve("resources/icon.ico"),
-    fileVersion: "0.1.0.0",
-    productVersion: "0.1.0.0",
+    fileVersion: `${pkg.version.split("-")[0]}.0`,
+    productVersion: `${pkg.version.split("-")[0]}.0`,
     productName: "mitotoReader",
     win32Metadata: {
       FileDescription: "mitotoReader",

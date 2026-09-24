@@ -1,40 +1,73 @@
-name: Windows alpha validation
+name: Windows build and validation
 on:
   workflow_dispatch:
+  workflow_call:
   push:
+    branches: ["**"]
   pull_request:
 permissions:
   contents: read
 jobs:
   portable:
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4.2"
-      - run: npm ci
-      - run: node node_modules/electron/install.js
-      - run: bun cmd/build.ts --package
-      - run: node --test tests/startup.test.cjs tests/runtime.test.cjs
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/electron/install.js
+      - name: Build portable reader
+        run: npm run package
       - run: ./tests/generate-reader-fixtures.ps1
       - name: Test packaged reader
         shell: pwsh
         run: |
-          $env:MITOTO_TEST_EXE = (Resolve-Path 'release/mitotoReader-0.1.0-alpha.1-win32-x64/mitotoReader.exe').Path
-          node tests/smoke.mjs
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $env:MITOTO_TEST_EXE = (Resolve-Path "release/mitotoReader-$version-win32-x64/mitotoReader.exe").Path
+          npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/ocr-languages.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build setup EXE
+        run: npm run installer
+      - name: Validate installer on clean runner
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $installer = (Resolve-Path "release/installers/mitotoReader-$version-Setup.exe").Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'mitoto-installed'
+          $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          if (Test-Path (Join-Path $installDir 'portable.txt')) { throw 'Installed app must use the user data directory' }
+          $env:MITOTO_TEST_EXE = (Resolve-Path (Join-Path $installDir 'mitotoReader.exe')).Path
+          node tests/features.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $name = "mitotoReader-$version-win32-x64"
+          New-Item -ItemType Directory -Path release/assets -Force | Out-Null
+          Compress-Archive -LiteralPath "release/$name" -DestinationPath "release/assets/$name.zip"
+          Copy-Item "release/installers/mitotoReader-$version-Setup.exe" release/assets/
+          git archive --format=zip --output="release/assets/mitotoReader-$version-source.zip" HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hashes = Get-ChildItem release/assets -File | Sort-Object Name | ForEach-Object {
+            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          }
+          [IO.File]::WriteAllLines((Join-Path (Resolve-Path release/assets).Path 'SHA256SUMS.txt'), $hashes, [Text.UTF8Encoding]::new($false))
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: mitotoReader-0.1.0-alpha.1-win32-x64
-          path: release/mitotoReader-0.1.0-alpha.1-win32-x64/
+          name: release-assets
+          path: release/assets/
+          compression-level: 0
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:

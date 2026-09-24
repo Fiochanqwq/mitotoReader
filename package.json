@@ -1,16 +1,17 @@
 {
   "name": "mitotoreader",
   "productName": "mitotoReader",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-alpha.1",
   "private": true,
   "description": "A minimal offline reader for Windows",
   "license": "GPL-3.0-only",
   "main": "app/main.cjs",
   "scripts": {
-    "build": "bun cmd/build.ts",
+    "build": "node cmd/build.ts",
     "start": "electron .",
-    "test": "node tests/smoke.mjs",
-    "package": "bun cmd/build.ts --package"
+    "test": "node --test tests/startup.test.cjs tests/runtime.test.cjs tests/library.test.cjs tests/reader-utils.test.mjs && node tests/smoke.mjs && node tests/features.mjs && node tests/long-epub.mjs",
+    "package": "node cmd/build.ts --package",
+    "installer": "node cmd/installer.mjs"
   },
   "overrides": {
     "@xmldom/xmldom": "0.9.12"
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "electron": "44.4.5",
+    "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "pdf-lib": "1.17.1",
     "playwright-core": "1.63.0",

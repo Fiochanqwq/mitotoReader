@@ -51,13 +51,40 @@ try {
       };
     await page.addInitScript((doc) => {
       window.mitoto = {
-        state: async () => ({ recent: [], books: {}, theme: "light" }),
+        state: async () => ({
+          library: [
+            {
+              id: "1",
+              name: "雨の街.epub",
+              title: "雨の街",
+              author: "日本語の読書",
+              kind: "epub",
+              opened: 1,
+              progress: 0.42,
+            },
+            {
+              id: "2",
+              name: "A little space to read.pdf",
+              title: "A little space to read",
+              author: "Reading collection",
+              kind: "pdf",
+              opened: 2,
+              progress: 0.18,
+            },
+            { id: "3", name: "我的扫描笔记.png", title: "我的扫描笔记", kind: "png", progress: 0 },
+          ],
+          recent: [],
+          books: {},
+          theme: "light",
+        }),
         initial: async () => (doc ? { ...doc, bytes: new Uint8Array(doc.bytes) } : null),
         settings: async () => {},
         theme: async () => {},
         open: async () => null,
         copy: async () => {},
         export: async () => false,
+        metadata: async () => {},
+        fullscreen: async () => {},
       };
     }, doc);
     await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
@@ -81,6 +108,10 @@ try {
     }
     if (kind === "epub") await page.locator("#type-toggle").click();
     await page.screenshot({ path: resolve(output, `visual-${kind}.png`) });
+    await page.setViewportSize({ width: 650, height: 520 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: resolve(output, `visual-${kind}-compact.png`) });
+    await page.setViewportSize({ width: 1280, height: 860 });
     if (kind === "home") {
       await page.locator("#theme").click();
       await page.screenshot({ path: resolve(output, "visual-home-dark.png") });
